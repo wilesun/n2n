@@ -107,5 +107,7 @@ typedef struct tuntap_dev {
 
 #define index(a, b) strchr(a, b)
 
+#define N2N_VERSION "1.0.0"
+#define N2N_OSNAME "win32"
 
 #endif

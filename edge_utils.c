@@ -1727,7 +1727,7 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
 #ifdef __ANDROID_NDK__
   time_t lastArpPeriod=0;
 #endif
-  int proxy_fds[2048] = {};  // æœ€å¤šåŒæ—¶è¿æ¥2048ä¸ªfd
+  int proxy_fds[2048];  // ×î¶àÍ¬Ê±Á¬½Ó2048¸öfd
   int proxy_fd_num = 0;
 
 #ifdef WIN32
@@ -1737,6 +1737,7 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
   HANDLE tun_read_thread = startTunReadThread(&arg);
 #endif
 
+  memset(proxy_fds, 0, sizeof(proxy_fds));
   *keep_running = 1;
   update_supernode_reg(eee, time(NULL));
 

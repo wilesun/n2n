@@ -12,10 +12,10 @@ typedef unsigned long long __u64;
 
 enum C_NAT_TYPE
 {
-	UNKNOWN_NAT_TYPE = 0,	// æœªçŸ¥,å¾…æ£€æµ‹
-	CONE_NAT_TYPE,			// é”¥å½¢NAT
-	SYMMETRICAL_NAT_TYPE,	// å¯¹ç§°NAT
-	NIUBILITY_NAT_TYPE,		// IPæ˜¯å…¬ç½‘IP
+	UNKNOWN_NAT_TYPE = 0,	// Î´Öª,´ý¼ì²â
+	CONE_NAT_TYPE,			// ×¶ÐÎNAT
+	SYMMETRICAL_NAT_TYPE,	// ¶Ô³ÆNAT
+	NIUBILITY_NAT_TYPE,		// IPÊÇ¹«ÍøIP
 };
 
 #endif

@@ -17,9 +17,13 @@ limitations under the License.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef WIN32
+#else
 #include <unistd.h>
 #include <poll.h>
 #include <arpa/inet.h>
+#endif
 
 #include "c_type.h"
 #include "sock.h"
@@ -31,9 +35,9 @@ limitations under the License.
 int debug_level = 10;
 
 
-cli_infp_t gl_cli_infp = {};
+cli_infp_t gl_cli_infp = {0};
 struct pollfd poll_arr[INFP_POLL_MAX];
-int curfds = 0;	// å½“å‰pollfdä¸­æœ€å¤§æœ‰æ•ˆä¸‹æ ‡
+int curfds = 0;	// µ±Ç°pollfdÖĞ×î´óÓĞĞ§ÏÂ±ê
 
 void infp_timeout(unsigned long data)
 {
@@ -53,7 +57,7 @@ void infp_timeout(unsigned long data)
 		{
 			cli_infp_send_heart(&infp->main_sock, infp);
 			infp->next_login = jiffies + 60 * HZ;
-			infp->state = CLI_INFP_INIT;// 60ç§’æœªæ”¶åˆ°å¿ƒè·³åˆ™é‡æ–°ç™»å½•
+			infp->state = CLI_INFP_INIT;// 60ÃëÎ´ÊÕµ½ĞÄÌøÔòÖØĞÂµÇÂ¼
 		}
 		break;
 	default:
@@ -65,7 +69,7 @@ void infp_timeout(unsigned long data)
 		cli_infp_check_proxy_list();
 	}
 
-	// 5ç§’è¿›æ¥ä¸€æ¬¡ç®—äº†
+	// 5Ãë½øÀ´Ò»´ÎËãÁË
 	mod_timer(&gl_cli_infp.timer, jiffies + 5*HZ);
 }
 
@@ -73,7 +77,7 @@ int infp_init(const char *server_addr, __u8 *device_mac)
 {
 	int try_times = 0;
 
-	// åˆå§‹åŒ–jiffies
+	// ³õÊ¼»¯jiffies
 	init_timer_module();
 
 	snprintf(gl_cli_infp.name, sizeof(gl_cli_infp.name), "%s", device_mac);
@@ -88,7 +92,7 @@ int infp_init(const char *server_addr, __u8 *device_mac)
 	gl_cli_infp.timer.data = (unsigned long)&gl_cli_infp;
 	add_timer(&gl_cli_infp.timer);
 
-	//åˆå§‹åŒ–sock
+	//³õÊ¼»¯sock
 	gl_cli_infp.main_sock.fd = -1;
 	gl_cli_infp.main_port = (rand() % 35535) + 12000;
 	try_times = 0;
@@ -103,7 +107,7 @@ int infp_init(const char *server_addr, __u8 *device_mac)
 
 		gl_cli_infp.main_port = (rand() % 35535) + 12000;
 	}
-	// è®¾ç½®éé˜»å¡
+	// ÉèÖÃ·Ç×èÈû
 	set_sock_nonblock(gl_cli_infp.main_sock.fd);
 
 	return 0;
@@ -131,7 +135,7 @@ int infp_main_recv(sock_t* sock)
 {
 	struct sockaddr_in addr;
 	int ret = 0;
-	// æ€»ä¼šæ”¶åŒ…æŠ¥é”™çš„
+	// ×Ü»áÊÕ°ü±¨´íµÄ
 	while(udp_sock_recv(sock, &addr) > 0)
 	{
 		cli_infp_recv_do(sock, &addr);
@@ -145,7 +149,7 @@ int infp_proxy_recv(sock_t* sock)
 {
 	struct sockaddr_in addr;
 	int ret = 0;
-	// æ€»ä¼šæ”¶åŒ…æŠ¥é”™çš„
+	// ×Ü»áÊÕ°ü±¨´íµÄ
 	while(udp_sock_recv(sock, &addr) > 0)
 	{
 		cli_infp_proxy_do(sock, &addr);
@@ -222,16 +226,16 @@ int infp_cli_init(const char *sn_addr, __u8 *device_mac)
 	if(infp_init(sn_addr, device_mac))
 	{
 		printf("infp_init failed\n");
-		goto OUT;
+		goto FUNC_OUT;
 	}
 
 	if(init_poll())
 	{
 		printf("init_poll failed\n");
-		goto OUT;
+		goto FUNC_OUT;
 	}
 
-	// ç¬¬ä¸€ä¸ªtimeré‡Œå‘
+	// µÚÒ»¸ötimerÀï·¢
 	//cli_infp_send_login(&gl_cli_infp.main_sock, &gl_cli_infp);
 
 	CYM_LOG(LV_QUIET, "init ok\n");
@@ -245,7 +249,7 @@ int infp_cli_init(const char *sn_addr, __u8 *device_mac)
 	}
 	#endif
 	ret = 0;
-OUT:
+FUNC_OUT:
 	return ret;
 }
 

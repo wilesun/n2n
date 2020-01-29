@@ -21,58 +21,58 @@ limitations under the License.
 #include "timer.h"
 #include "sock.h"
 
-#define INFP_DEFAFULT_PORT 45124 // TODO: é…ç½®æ–‡ä»¶è·å–
+#define INFP_DEFAFULT_PORT 45124 // TODO: ÅäÖÃÎÄ¼ş»ñÈ¡
 
 #define INFP_HASH_MAX 0x100
 #define INFP_HASH_MASK 0xff
 
 enum CLI_INFP_STATE
 {
-	CLI_INFP_INIT = 0,		// åˆå§‹åŒ–
-	CLI_INFP_LOGIN,			// å·²ç™»é™†
+	CLI_INFP_INIT = 0,		// ³õÊ¼»¯
+	CLI_INFP_LOGIN,			// ÒÑµÇÂ½
 };
 
 typedef struct inf_proxy_s
 {
-	char  name[32];		// æ ‡è¯†(MACåœ°å€)
-	struct sockaddr_in addr;// å¯¹ç«¯å…¬ç½‘åœ°å€
-	int  fd;			// æœ¬åœ°ä¸å¯¹ç«¯é€šä¿¡ç”¨fd
-	__u32 uptime;		// æœ€åæ”¶åˆ°å¯¹æ–¹æ•°æ®åŒ…æ—¶é—´ jiffies -> æš‚å®š60ç§’è¶…æ—¶, é”€æ¯è¯¥éš§é“
-	__u32 connected;	// æ˜¯å¦å·²è¿æ¥
+	char  name[32];		// ±êÊ¶(MACµØÖ·)
+	struct sockaddr_in addr;// ¶Ô¶Ë¹«ÍøµØÖ·
+	int  fd;			// ±¾µØÓë¶Ô¶ËÍ¨ĞÅÓÃfd
+	__u32 uptime;		// ×îºóÊÕµ½¶Ô·½Êı¾İ°üÊ±¼ä jiffies -> Ôİ¶¨60Ãë³¬Ê±, Ïú»Ù¸ÃËíµÀ
+	__u32 connected;	// ÊÇ·ñÒÑÁ¬½Ó
 
-	struct list_head list_to; // å…³è” cli_infp_t->proxy_list
-	struct hlist_node hash_to; // å…³è” cli_infp_t->proxy_hash
+	struct list_head list_to; // ¹ØÁª cli_infp_t->proxy_list
+	struct hlist_node hash_to; // ¹ØÁª cli_infp_t->proxy_hash
 }inf_proxy_t;
 
-/* å­˜æ”¾ä¸€äº›å…¨å±€å˜é‡ */
+/* ´æ·ÅÒ»Ğ©È«¾Ö±äÁ¿ */
 typedef struct cli_infp_s
 {
-	__u32 server_ip;		// æœåŠ¡å™¨ip (ç½‘ç»œåº)
-	__u16 svr_m_port;		// æœåŠ¡å™¨ä¸»ç«¯å£ (ç½‘ç»œåº)
-	__u16 svr_b_port;		// æœåŠ¡å™¨å‰¯ç«¯å£ (ç½‘ç»œåº)
+	__u32 server_ip;		// ·şÎñÆ÷ip (ÍøÂçĞò)
+	__u16 svr_m_port;		// ·şÎñÆ÷Ö÷¶Ë¿Ú (ÍøÂçĞò)
+	__u16 svr_b_port;		// ·şÎñÆ÷¸±¶Ë¿Ú (ÍøÂçĞò)
 
-	__u16 main_port;		// ä¸æœåŠ¡å™¨è¿æ¥çš„ä¸»ç«¯å£, ä¸»è¿æ¥ç”¨
-	__u16 proxy_port[3];	// å‡†å¤‡çš„ä»£ç†ç«¯å£
+	__u16 main_port;		// Óë·şÎñÆ÷Á¬½ÓµÄÖ÷¶Ë¿Ú, Ö÷Á¬½ÓÓÃ
+	__u16 proxy_port[3];	// ×¼±¸µÄ´úÀí¶Ë¿Ú
 
-	sock_t main_sock;		// å¯¹åº”main_port
-	sock_t proxy_sock[3];	// å¯¹åº”proxy_port (ä»£ç†ä¸»è¿æ¥)
+	sock_t main_sock;		// ¶ÔÓ¦main_port
+	sock_t proxy_sock[3];	// ¶ÔÓ¦proxy_port (´úÀíÖ÷Á¬½Ó)
 
 	__u32 nat_type;			// @see C_NAT_TYPE
-	char  name[32];			// å®¢æˆ·ç«¯æ ‡è¯† (MACåœ°å€)
-	__u8  mode;				// å®¢æˆ·ç«¯æ¨¡å¼ 0:host, 1:client
+	char  name[32];			// ¿Í»§¶Ë±êÊ¶ (MACµØÖ·)
+	__u8  mode;				// ¿Í»§¶ËÄ£Ê½ 0:host, 1:client
 	__u8  pad[3];
 
 	__u32 state;			// @see CLI_INFP_STATE
-	__u32 next_login;		// ä¸‹æ¬¡ç™»é™†
-	__u32 next_hb;			// ä¸‹æ¬¡å¿ƒè·³
+	__u32 next_login;		// ÏÂ´ÎµÇÂ½
+	__u32 next_hb;			// ÏÂ´ÎĞÄÌø
 
-	struct list_head proxy_list;	// NATç©¿é€çš„å¯¹ç«¯è®¾å¤‡é“¾è¡¨ -> inf_proxy_t
-	struct hlist_head proxy_hash[INFP_HASH_MAX];// proxy_listçš„hash
+	struct list_head proxy_list;	// NAT´©Í¸µÄ¶Ô¶ËÉè±¸Á´±í -> inf_proxy_t
+	struct hlist_head proxy_hash[INFP_HASH_MAX];// proxy_listµÄhash
 
-	struct timer_list timer;	// 1ç§’1æ¬¡çš„timer (æ‰€æœ‰timerå¯ä»¥ç»Ÿä¸€æ‰”è¿™é‡Œ)
+	struct timer_list timer;	// 1Ãë1´ÎµÄtimer (ËùÓĞtimer¿ÉÒÔÍ³Ò»ÈÓÕâÀï)
 }cli_infp_t;
 
-#define INFP_POLL_MAX 20		// éšæ‰‹å†™çš„
+#define INFP_POLL_MAX 20		// ËæÊÖĞ´µÄ
 
 extern cli_infp_t gl_cli_infp;
 extern struct pollfd poll_arr[];

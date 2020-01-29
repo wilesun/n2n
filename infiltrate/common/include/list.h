@@ -11,9 +11,13 @@
 #define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
 #endif
 
+#ifdef WIN32
+#define container_of(ptr, type, member) (type *)((char *)ptr - offsetof(type,member));
+#else
 #define container_of(ptr, type, member) ({\
 const typeof( ((type *)0)->member ) *__mptr = (ptr);\
 (type *)( (char *)__mptr - offsetof(type,member) );})
+#endif
 
 #ifdef CONFIG_ILLEGAL_POINTER_VALUE
 # define POISON_POINTER_DELTA _AC(CONFIG_ILLEGAL_POINTER_VALUE, UL)
@@ -21,8 +25,13 @@ const typeof( ((type *)0)->member ) *__mptr = (ptr);\
 # define POISON_POINTER_DELTA 0
 #endif
 
+#ifndef WIN32
 #define LIST_POISON1  ((void *) 0x100 + POISON_POINTER_DELTA)
 #define LIST_POISON2  ((void *) 0x200 + POISON_POINTER_DELTA)
+#else
+#define LIST_POISON1  NULL
+#define LIST_POISON2  NULL
+#endif
 
 static inline unsigned int SDBMHash(char *str)
 {

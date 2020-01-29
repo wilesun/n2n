@@ -15,7 +15,9 @@ limitations under the License.
 */
 
 #include <stdlib.h>
+#ifndef WIN32
 #include <unistd.h>
+#endif
 
 #include "work.h"
 #include "cJSON.h"
@@ -287,7 +289,7 @@ int cli_infp_send_get_nat_port(sock_t* sock, cli_infp_t* infp, int num, char* ds
 					, dst_name
 					);
 
-	// ä»‹ä¸ªåŒ…, å§‘ä¸”æ‰”å‰¯ç«¯å£
+	// ½é¸ö°ü, ¹ÃÇÒÈÓ¸±¶Ë¿Ú
 	return cli_infp_send(infp->server_ip, infp->svr_b_port, sock, send_buf, len);
 }
 
@@ -324,22 +326,22 @@ try_bind:
 
 	cli_infp_send_get_nat_port(&gl_cli_infp.proxy_sock[0], infp, 0, dst_ip, dst_name);
 	cli_infp_send_get_nat_port(&gl_cli_infp.proxy_sock[1], infp, 1, dst_ip, dst_name);
-// éœ€ç»Ÿè®¡ä¸ŽæœåŠ¡å™¨å»¶è¿Ÿ, ç„¶åŽåœ¨æ­¤å¤„è¿›è¡Œå›žåº”åŒ…çš„æ”¶å–
+// ÐèÍ³¼ÆÓë·þÎñÆ÷ÑÓ³Ù, È»ºóÔÚ´Ë´¦½øÐÐ»ØÓ¦°üµÄÊÕÈ¡
 	return 0;
 }
 
 int cli_infp_do_proxy_ack(cJSON* root, struct sockaddr_in *addr, sock_t *sock)
 {
 	cJSON* j_value = NULL;
-	char dst_ip[32] = {};
-	char dst_name[32] = {};
+	char dst_ip[32] = {0};
+	char dst_name[32] = {0};
 	inf_proxy_t *proxy = NULL;
 
 	j_value = cJSON_GetObjectItem(root, "dst_ip");
 	if(!j_value || !j_value->valuestring)
 	{
 		CYM_LOG(LV_ERROR, "not dst_ip!\n");
-		goto OUT;
+		goto FUNC_OUT;
 	}
 	snprintf(dst_ip, sizeof(dst_ip), "%s", j_value->valuestring);
 
@@ -347,16 +349,16 @@ int cli_infp_do_proxy_ack(cJSON* root, struct sockaddr_in *addr, sock_t *sock)
 	if(!j_value || !j_value->valuestring)
 	{
 		CYM_LOG(LV_ERROR, "not dst_ip!\n");
-		goto OUT;
+		goto FUNC_OUT;
 	}
 	snprintf(dst_name, sizeof(dst_name), "%s", j_value->valuestring);
 
-	// é˜²æ­¢å·²æ‰“é€šçš„è¿žæŽ¥é‡å¤æ‰“æ´ž (æ­¤å¤„åªåˆ·æ–°,å¤–éƒ¨è°ƒç”¨æ—¶åˆ¤æ–­)
+	// ·ÀÖ¹ÒÑ´òÍ¨µÄÁ¬½ÓÖØ¸´´ò¶´ (´Ë´¦Ö»Ë¢ÐÂ,Íâ²¿µ÷ÓÃÊ±ÅÐ¶Ï)
 	proxy = inf_proxy_find_create_cli(dst_name);
 	if(proxy->fd < 0)
 		proxy->uptime = jiffies;
 
-OUT:
+FUNC_OUT:
 	return cli_infp_get_nat_port(sock, &gl_cli_infp, dst_ip, dst_name);
 }
 
@@ -376,7 +378,7 @@ int cli_infp_send_stun_hello(sock_t* sock, cli_infp_t* infp, __u32 ip, __u16 por
 void cli_infp_recv_print(sock_t* sock)
 {
 	struct sockaddr_in addr;
-	// æ€»ä¼šæ”¶åŒ…æŠ¥é”™çš„
+	// ×Ü»áÊÕ°ü±¨´íµÄ
 	while(udp_sock_recv(sock, &addr) > 0)
 	{
 		memxor(sock->recv_buf, sock->recv_len);
@@ -472,7 +474,7 @@ int cli_infp_do_proxy_task(cJSON* root, struct sockaddr_in *addr, sock_t *sock)
 	}
 	port = atoi(j_value->valuestring);
 
-	// å°è¯•æ‰“é€šNAT
+	// ³¢ÊÔ´òÍ¨NAT
 	cli_infp_do_stun_hello(&gl_cli_infp, offset, mode, ip, port);
 
 	ret = 0;
@@ -561,7 +563,7 @@ int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr)
 				if(proxy)
 				{
 					memcpy(&proxy->addr, addr, sizeof(proxy->addr));
-					proxy->fd = sock->fd;	// fd äº¤ç»™proxyæŽ¥ç®¡
+					proxy->fd = sock->fd;	// fd ½»¸øproxy½Ó¹Ü
 					sock->fd = -1;
 					proxy->uptime = jiffies;
 				}
@@ -590,12 +592,12 @@ int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr)
 /**********n2n*************/
 typedef struct n2n_sock
 {
-    uint8_t     family;         /* AF_INET or AF_INET6; or 0 if invalid */
-    uint16_t    port;           /* host order */
+    __u8     family;         /* AF_INET or AF_INET6; or 0 if invalid */
+    __u16    port;           /* host order */
     union
     {
-    uint8_t     v6[16];  /* byte sequence */
-    uint8_t     v4[4];  /* byte sequence */
+    __u8     v6[16];  /* byte sequence */
+    __u8     v4[4];  /* byte sequence */
     } addr;
 } n2n_sock_t;
 
@@ -611,12 +613,12 @@ int inf_proxy_check_send(void* p_mac, void* p_addr, int* fd)
 	   mac[3] & 0xFF, mac[4] & 0xFF, mac[5] & 0xFF);
 
 	proxy = inf_proxy_find_cli(mac_str);
-	// 3ç§’å°è¯•ä¸€æ¬¡æ‰“æ´ž
+	// 3Ãë³¢ÊÔÒ»´Î´ò¶´
 	if(proxy)
 	{
 		if(proxy->fd > 0)
 		{
-			addr->family = proxy->addr.sin_family;
+			addr->family = (__u8)proxy->addr.sin_family;
 			addr->port = proxy->addr.sin_port;
 			memcpy(addr->addr.v4, &proxy->addr.sin_addr.s_addr, sizeof(addr->addr.v4));
 			*fd = proxy->fd;

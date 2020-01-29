@@ -17,6 +17,12 @@ limitations under the License.
 #ifndef __SOCK_H__
 #define __SOCK_H__
 
+#ifdef WIN32
+#include <WinSock2.h>
+#include <WS2tcpip.h>
+#define poll WSAPoll
+#define close closesocket
+#else
 #include <netdb.h>
 #include <sys/ioctl.h>
 #include <linux/if.h>
@@ -25,9 +31,11 @@ limitations under the License.
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <poll.h>
+#include <unistd.h>
+#endif
 #include <fcntl.h>
 #include <string.h>
-#include <unistd.h>
+
 
 #include "c_type.h"
 
@@ -35,15 +43,15 @@ typedef struct sock_s
 {
 	int fd;
 	int poll_i;
-	__u32 uptime;		// æœ€åä¸€æ¬¡æœ‰æ”¶åŒ…/å‘åŒ…æ—¶é—´ jiffies
+	__u32 uptime;		// ×îºóÒ»´ÎÓĞÊÕ°ü/·¢°üÊ±¼ä jiffies
 
-	char* recv_buf;		// æ¥æ”¶ç¼“å­˜
-	int recv_buf_len;	// æ¥æ”¶ç¼“å­˜æ€»å¤§å°
-	int recv_len;		// å½“å‰å·²æ¥æ”¶æ•°æ®å¤§å°
+	char* recv_buf;		// ½ÓÊÕ»º´æ
+	int recv_buf_len;	// ½ÓÊÕ»º´æ×Ü´óĞ¡
+	int recv_len;		// µ±Ç°ÒÑ½ÓÊÕÊı¾İ´óĞ¡
 
-	char* send_buf;		// å‘é€ç¼“å­˜
-	int send_buf_len;	// å‘é€ç¼“å­˜æ€»å¤§å°
-	int send_len;		// å½“å‰å¾…å‘é€æ•°æ®å¤§å°
+	char* send_buf;		// ·¢ËÍ»º´æ
+	int send_buf_len;	// ·¢ËÍ»º´æ×Ü´óĞ¡
+	int send_len;		// µ±Ç°´ı·¢ËÍÊı¾İ´óĞ¡
 }sock_t;
 
 static inline void poll_add_write(struct pollfd* _poll)
@@ -68,8 +76,13 @@ static inline void poll_del_read(struct pollfd* _poll)
 
 static inline int set_sock_block(int fd)
 {
-	//è®¾ç½®å¥—æ¥å­—éé˜»å¡
+	//ÉèÖÃÌ×½Ó×Ö×èÈû
+#ifdef WIN32
+	unsigned long ul = 0;
+	int ret = ioctlsocket(fd, FIONBIO, (unsigned long *)&ul);
+#else
 	int ret = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK);
+#endif
 	if(ret == -1)
 	{
 		perror("set sock block:");
@@ -80,8 +93,13 @@ static inline int set_sock_block(int fd)
 
 static inline int set_sock_nonblock(int fd)
 {
-	//è®¾ç½®å¥—æ¥å­—éé˜»å¡
+	//ÉèÖÃÌ×½Ó×Ö·Ç×èÈû
+#ifdef WIN32
+	unsigned long ul = 1;
+	int ret = ioctlsocket(fd, FIONBIO, (unsigned long *)&ul);
+#else
 	int ret = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+#endif
 	if(ret == -1)
 	{
 		perror("set sock nonblock:");
@@ -95,8 +113,13 @@ static inline __u32 StrToIp(const char *str)
 	union {
 		struct in_addr ipaddr;
 		__u32 ip;
-	}addr = {};
+	}addr;
+	memset(&addr, 0, sizeof(addr));
+#ifdef WIN32
+	inet_pton(AF_INET, str, &addr.ipaddr);
+#else
 	inet_aton(str, &addr.ipaddr);
+#endif
 	return addr.ip;
 }
 

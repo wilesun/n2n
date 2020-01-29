@@ -1,4 +1,8 @@
+#ifndef WIN32
 #include <sys/time.h>
+#else
+#include <windows.h>
+#endif
 #include <time.h>
 #include <stdlib.h>
 
@@ -15,6 +19,27 @@
 #define TVR_SIZE (1 << TVR_BITS) 
 #define TVN_MASK (TVN_SIZE - 1) 
 #define TVR_MASK (TVR_SIZE - 1) 
+
+#ifdef WIN32
+int gettimeofday(struct timeval *tp, void *tzp)
+{
+	time_t clock;
+	struct tm tm;
+	SYSTEMTIME wtm;
+	GetLocalTime(&wtm);
+	tm.tm_year = wtm.wYear - 1900;
+	tm.tm_mon = wtm.wMonth - 1;
+	tm.tm_mday = wtm.wDay;
+	tm.tm_hour = wtm.wHour;
+	tm.tm_min = wtm.wMinute;
+	tm.tm_sec = wtm.wSecond;
+	tm.tm_isdst = -1;
+	clock = mktime(&tm);
+	tp->tv_sec = (long)clock;
+	tp->tv_usec = wtm.wMilliseconds * 1000;
+	return (0);
+}
+#endif
 
 struct timer_vec { 
 	int index; 
@@ -42,7 +67,7 @@ static struct timer_vec * const tvecs[] = {
 
 void init_jiffies(void)
 {
-	// TODO: 系统时间修改之后……咳咳
+	// TODO: ϵͳʱ���޸�֮�󡭡��ȿ�
 	gettimeofday(&__start,NULL);
 }
 
@@ -77,7 +102,7 @@ void init_timer_module(void)
 {
 	init_jiffies();
 	init_timervecs();
-	srand(time(NULL));
+	srand((unsigned int)time(NULL));
 }
 
 static inline void internal_add_timer(struct timer_list *timer)

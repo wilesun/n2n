@@ -23,6 +23,7 @@ limitations under the License.
 #define SOCK_BUF_LEN 102400
 #define GET_GATEWAY_CMD "route | grep 'default' | awk '{print $8}'"
 
+#if 0
 int get_gateway_devname(char *gate)
 {
 	FILE *fp = NULL;
@@ -54,6 +55,7 @@ int get_gateway_devname(char *gate)
 
 	return 0;
 }
+#endif
 
 __u32 get_default_local_ip(void)
 {
@@ -137,7 +139,7 @@ int sock_del_poll(struct pollfd* _poll, int max, sock_t* sock)
 	return curfd;
 }
 
-// IP ç½‘ç»œåº, PORT ç½‘ç»œåº
+// IP ÍøÂçĞò, PORT ÍøÂçĞò
 void set_sockaddr_in(struct sockaddr_in *addr, __u32 ip, __u16 port)
 {
 	memset(addr, 0, sizeof(*addr));
@@ -178,7 +180,7 @@ int udp_sock_send(sock_t *sock, void* data, int data_len, __u32 ip, __u16 port)
 
 			sock->send_buf_len += SOCK_BUF_LEN;
 		}
-		memcpy(sock->send_buf+sock->send_len, data+ret, len);
+		memcpy(sock->send_buf+sock->send_len, (char*)data + ret, len);
 	}
 
 	return ret;
