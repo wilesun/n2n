@@ -186,6 +186,7 @@ struct peer_info {
   int                 timeout;
   time_t              last_seen;
   time_t              last_p2p;
+  int                 p2p_fd; /* infiltrate fd */
   time_t              last_sent_query;
 
   UT_hash_handle hh; /* makes this structure hashable */

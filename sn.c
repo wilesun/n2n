@@ -24,6 +24,9 @@
 #include <signal.h>
 #endif
 
+#include "infiltrate/server/include/work.h"
+
+
 #define N2N_SN_LPORT_DEFAULT 7654
 #define N2N_SN_PKTBUF_SIZE   2048
 
@@ -1037,6 +1040,10 @@ int main(int argc, char * const argv[]) {
   SetConsoleCtrlHandler(term_handler, TRUE);
 #endif
 
+  if(infp_svr_init())
+    exit(-3);
+
+
   keep_running = 1;
   return run_loop(&sss_node);
 }
@@ -1058,6 +1065,11 @@ static int run_loop(n2n_sn_t * sss) {
     fd_set socket_mask;
     struct timeval wait_time;
     time_t now=0;
+
+    if(infp_poll_run(30))
+        break;
+
+    run_timer_list();
 
     FD_ZERO(&socket_mask);
     max_sock = MAX(sss->sock, sss->mgmt_sock);

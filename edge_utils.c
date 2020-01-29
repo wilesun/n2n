@@ -30,6 +30,7 @@
 #include <tun2tap/tun2tap.h>
 #endif /* __ANDROID_NDK__ */
 
+#include "infiltrate/client/include/work.h"
 
 #define SOCKET_TIMEOUT_INTERVAL_SECS    10
 #define REGISTER_SUPER_INTERVAL_DFL     20 /* sec, usually UDP NAT entries in a firewall expire after 30 seconds */
@@ -50,7 +51,7 @@
 /* ************************************** */
 
 static const char * supernode_ip(const n2n_edge_t * eee);
-static void send_register(n2n_edge_t *eee, const n2n_sock_t *remote_peer, const n2n_mac_t peer_mac);
+static void send_register(n2n_edge_t *eee, const n2n_sock_t *remote_peer, const n2n_mac_t peer_mac, int sock_fd);
 static void check_peer_registration_needed(n2n_edge_t * eee,
 		uint8_t from_supernode,
 		const n2n_mac_t mac,
@@ -258,6 +259,9 @@ n2n_edge_t* edge_init(const tuntap_dev *dev, const n2n_edge_conf_t *conf, int *r
     goto edge_init_error;
   }
 
+  if(infp_cli_init(conf->sn_ip_array[eee->sn_idx], eee->device.mac_addr))
+    goto edge_init_error;
+
 //edge_init_success:
   *rv = 0;
   return(eee);
@@ -375,7 +379,7 @@ static void register_with_local_peers(n2n_edge_t * eee) {
     /* send registration to the local multicast group */
     traceEvent(TRACE_DEBUG, "Registering with multicast group %s:%u",
         N2N_MULTICAST_GROUP, N2N_MULTICAST_PORT);
-    send_register(eee, &(eee->multicast_peer), NULL);
+    send_register(eee, &(eee->multicast_peer), NULL, -1);
   }
 #else
   traceEvent(TRACE_DEBUG, "Multicast peers discovery is disabled, skipping");
@@ -436,7 +440,7 @@ static void register_with_new_peer(n2n_edge_t * eee,
        */
       if (eee->conf.register_ttl == 1) {
         /* We are DMZ host or port is directly accessible. Just let peer to send back the ack */
-#ifndef WIN32
+#if 0 // useless
       } else if(eee->conf.register_ttl > 1) {
         /* Setting register_ttl usually implies that the edge knows the internal net topology
          * clearly, we can apply aggressive port prediction to support incoming Symmetric NAT
@@ -452,23 +456,36 @@ static void register_with_new_peer(n2n_edge_t * eee,
                   sizeof(eee->conf.register_ttl));
         for (; alter > 0; alter--, sock.port++)
         {
-          send_register(eee, &sock, mac);
+          send_register(eee, &sock, mac, scan->p2p_fd);
         }
         setsockopt(eee->udp_sock, IPPROTO_IP, IP_TTL, (void *)(char *)&curTTL, sizeof(curTTL));
 #endif
       } else { /* eee->conf.register_ttl <= 0 */
         /* Normal STUN */
-        send_register(eee, &(scan->sock), mac);
+        send_register(eee, &(scan->sock), mac, scan->p2p_fd);
       }
-      send_register(eee, &(eee->supernode), mac);
+      send_register(eee, &(eee->supernode), mac, scan->p2p_fd);
     } else {
       /* P2P register, send directly */
-      send_register(eee, &(scan->sock), mac);
+      send_register(eee, &(scan->sock), mac, scan->p2p_fd);
     }
 
     register_with_local_peers(eee);
-  } else
-    scan->sock = *peer;
+  }
+  else
+  {
+    // -1 failed, 0: send proxy, 1: proxy ok
+    int fd = -1;
+    if(inf_proxy_check_send((void*)mac, (void*)&(scan->sock), &fd) > 0)
+    {
+		scan->p2p_fd = fd;
+		send_register(eee, &(scan->sock), mac, scan->p2p_fd);
+    }
+	else
+	{
+	    scan->sock = *peer;
+	}
+  }
 }
 
 /* ************************************** */
@@ -742,7 +759,8 @@ static void send_query_peer( n2n_edge_t * eee,
 /** Send a REGISTER packet to another edge. */
 static void send_register(n2n_edge_t * eee,
 		   const n2n_sock_t * remote_peer,
-		   const n2n_mac_t peer_mac) {
+		   const n2n_mac_t peer_mac,
+		   int sock_fd) {
   uint8_t pktbuf[N2N_PKT_BUF_SIZE];
   size_t idx;
   /* ssize_t sent; */
@@ -779,7 +797,7 @@ static void send_register(n2n_edge_t * eee,
   traceEvent(TRACE_INFO, "Send REGISTER to %s",
 	     sock_to_cstr(sockbuf, remote_peer));
 
-  /* sent = */ sendto_sock(eee->udp_sock, pktbuf, idx, remote_peer);
+  /* sent = */ sendto_sock(sock_fd > 0 ? sock_fd : eee->udp_sock, pktbuf, idx, remote_peer);
 }
 
 /* ************************************** */
@@ -787,7 +805,8 @@ static void send_register(n2n_edge_t * eee,
 /** Send a REGISTER_ACK packet to a peer edge. */
 static void send_register_ack(n2n_edge_t * eee,
 			      const n2n_sock_t * remote_peer,
-			      const n2n_REGISTER_t * reg) {
+			      const n2n_REGISTER_t * reg,
+			      int sock_fd) {
   uint8_t pktbuf[N2N_PKT_BUF_SIZE];
   size_t idx;
   /* ssize_t sent; */
@@ -819,7 +838,7 @@ static void send_register_ack(n2n_edge_t * eee,
 	     sock_to_cstr(sockbuf, remote_peer));
 
 
-  /* sent = */ sendto_sock(eee->udp_sock, pktbuf, idx, remote_peer);
+  /* sent = */ sendto_sock(sock_fd > 0 ? sock_fd : eee->udp_sock, pktbuf, idx, remote_peer);
 }
 
 /* ************************************** */
@@ -1166,7 +1185,8 @@ static int check_query_peer_info(n2n_edge_t *eee, time_t now, n2n_mac_t mac) {
 /* @return 1 if destination is a peer, 0 if destination is supernode */
 static int find_peer_destination(n2n_edge_t * eee,
                                  n2n_mac_t mac_address,
-                                 n2n_sock_t * destination) {
+                                 n2n_sock_t * destination,
+                                 int *sock_fd) {
   struct peer_info *scan;
   macstr_t mac_buf;
   n2n_sock_str_t sockbuf;
@@ -1213,6 +1233,9 @@ static int find_peer_destination(n2n_edge_t * eee,
 	     macaddr_str(mac_buf, mac_address),
 	     sock_to_cstr(sockbuf, destination));
 
+  if(scan)
+    *sock_fd = scan->p2p_fd;
+
   return retval;
 }
 
@@ -1229,10 +1252,11 @@ static int send_packet(n2n_edge_t * eee,
   n2n_sock_str_t sockbuf;
   n2n_sock_t destination;
   macstr_t mac_buf;
+  int sock_fd = -1;
 
   /* hexdump(pktbuf, pktlen); */
 
-  is_p2p = find_peer_destination(eee, dstMac, &destination);
+  is_p2p = find_peer_destination(eee, dstMac, &destination, &sock_fd);
 
   if(is_p2p)
     ++(eee->stats.tx_p2p);
@@ -1247,7 +1271,7 @@ static int send_packet(n2n_edge_t * eee,
     sock_to_cstr(sockbuf, &destination),
     macaddr_str(mac_buf, dstMac), pktlen);
 
-  /* s = */ sendto_sock(eee->udp_sock, pktbuf, pktlen, &destination);
+  /* s = */ sendto_sock(sock_fd > 0 ? sock_fd : eee->udp_sock, pktbuf, pktlen, &destination);
 
   return 0;
 }
@@ -1553,7 +1577,7 @@ static void readFromIPSocket(n2n_edge_t * eee, int in_sock) {
 	    find_and_remove_peer(&eee->pending_peers, reg.srcMac);
 
 	    /* NOTE: only ACK to peers */
-	    send_register_ack(eee, orig_sender, &reg);
+	    send_register_ack(eee, orig_sender, &reg, in_sock);
 	  }
 
 	  traceEvent(TRACE_INFO, "Rx REGISTER src=%s dst=%s from peer %s (%s)",
@@ -1645,7 +1669,7 @@ static void readFromIPSocket(n2n_edge_t * eee, int in_sock) {
             traceEvent(TRACE_INFO, "Rx PEER_INFO for %s: is at %s",
                        macaddr_str(mac_buf1, pi.mac),
                        sock_to_cstr(sockbuf1, &pi.sock));
-            send_register(eee, &scan->sock, scan->mac_addr);
+            send_register(eee, &scan->sock, scan->mac_addr, scan->p2p_fd);
         } else {
             traceEvent(TRACE_INFO, "Rx PEER_INFO unknown peer %s",
                        macaddr_str(mac_buf1, pi.mac) );
@@ -1678,6 +1702,20 @@ void print_edge_stats(const n2n_edge_t *eee) {
   traceEvent(TRACE_NORMAL, "**********************************");
 }
 
+int edge_fd_set_proxy(int parm_max_sock, fd_set* socket_mask, int* proxy_fds, int* proxy_fd_num)
+{
+  int max_sock = parm_max_sock;
+  int i = 0;
+  inf_proxy_get_fds(proxy_fds, proxy_fd_num);
+  for(i = 0; i < *proxy_fd_num; i++)
+  {
+    FD_SET(proxy_fds[i], socket_mask);
+    max_sock = max(max_sock, proxy_fds[i]);
+  }
+
+  return max_sock;
+}
+
 /* ************************************** */
 
 int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
@@ -1689,6 +1727,8 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
 #ifdef __ANDROID_NDK__
   time_t lastArpPeriod=0;
 #endif
+  int proxy_fds[2048] = {};  // 最多同时连接2048个fd
+  int proxy_fd_num = 0;
 
 #ifdef WIN32
   struct tunread_arg arg;
@@ -1708,12 +1748,18 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
    */
 
   while(*keep_running) {
-    int rc, max_sock = 0;
+    int rc, i, max_sock = 0;
     fd_set socket_mask;
     struct timeval wait_time;
     time_t nowTime;
 
+    if(infp_poll_run(30))
+        break;
+
+    run_timer_list();
+
     FD_ZERO(&socket_mask);
+	memset(proxy_fds, 0, sizeof(proxy_fds));
     FD_SET(eee->udp_sock, &socket_mask);
     FD_SET(eee->udp_mgmt_sock, &socket_mask);
     max_sock = max(eee->udp_sock, eee->udp_mgmt_sock);
@@ -1728,7 +1774,10 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
     max_sock = max(max_sock, eee->device.fd);
 #endif
 
-    wait_time.tv_sec = SOCKET_TIMEOUT_INTERVAL_SECS; wait_time.tv_usec = 0;
+    max_sock = edge_fd_set_proxy(max_sock, &socket_mask, proxy_fds, &proxy_fd_num);
+
+    wait_time.tv_sec = 0;
+    wait_time.tv_usec = 30;
 
     rc = select(max_sock+1, &socket_mask, NULL, NULL, &wait_time);
     nowTime=time(NULL);
@@ -1748,6 +1797,14 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
 	 * socket. */
 	readFromIPSocket(eee, eee->udp_sock);
       }
+
+	  for(i = 0; i < proxy_fd_num; i++) {
+		  if(FD_ISSET(proxy_fds[i], &socket_mask)) {
+		/* Read a cooked socket from the internet socket (unicast). Writes on the TAP
+		 * socket. */
+		readFromIPSocket(eee, proxy_fds[i]);
+	      }
+	  }
 
 
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
