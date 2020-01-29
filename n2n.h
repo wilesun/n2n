@@ -42,6 +42,7 @@
 #undef N2N_HAVE_DAEMON
 #undef N2N_HAVE_SETUID
 #else
+#define N2N_HAVE_DAEMON
 #ifndef CMAKE_BUILD
 #include "config.h"
 #endif
