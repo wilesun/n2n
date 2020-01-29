@@ -21,7 +21,7 @@ CFLAGS+=-I..
 LDFLAGS+=-L..
 CFLAGS+=$(DEBUG) $(OPTIMIZATION) $(WARN)
 
-N2N_LIB=../libn2n.a ../libinfp_cli.a
+N2N_LIB=../libn2n.a ../libinfp_cli.a -lm
 
 TOOLS=n2n-benchmark
 TOOLS+=@ADDITIONAL_TOOLS@

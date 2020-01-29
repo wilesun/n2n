@@ -366,8 +366,16 @@ int infp_do_proxy_request(cJSON* root, struct sockaddr_in *addr, sock_t *sock)
 	}
 	else
 	{
-		cli_send_proxy_ack(cli, dst, sock, 0, "ok");
-		cli_send_proxy_ack(dst, cli, sock, 0, "ok");
+		// TODO: same nat ip support
+		if(cli->nat_ip != dst->nat_ip)
+		{
+			cli_send_proxy_ack(cli, dst, sock, 0, "ok");
+			cli_send_proxy_ack(dst, cli, sock, 0, "ok");
+		}
+		else
+		{
+			cli_send_proxy_ack(cli, dst, sock, 1, "same nat ip");
+		}
 	}
 
 	ret = 0;

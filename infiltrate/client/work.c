@@ -630,7 +630,7 @@ int inf_proxy_check_send(void* p_mac, void* p_addr, int* fd)
 		}
 	}
 
-
+	proxy->uptime = jiffies;
 	cli_infp_send_proxy_request(&gl_cli_infp.main_sock, &gl_cli_infp, "", mac_str);
 	return 0;
 }

@@ -472,19 +472,28 @@ static void register_with_new_peer(n2n_edge_t * eee,
 
     register_with_local_peers(eee);
   }
-  else
+  else if(scan->p2p_try < 10)
   {
     // -1 failed, 0: send proxy, 1: proxy ok
     int fd = -1;
-    if(inf_proxy_check_send((void*)mac, (void*)&(scan->sock), &fd) > 0)
+    int ret = inf_proxy_check_send((void*)mac, (void*)&(scan->sock), &fd);
+    if(ret > 0)
     {
-		scan->p2p_fd = fd;
-		send_register(eee, &(scan->sock), mac, scan->p2p_fd);
+       scan->p2p_fd = fd;
+       send_register(eee, &(scan->sock), mac, scan->p2p_fd);
     }
-	else
-	{
-	    scan->sock = *peer;
-	}
+    else if(ret == 0)
+    {
+       scan->p2p_try++;
+    }
+    else
+    {
+       scan->sock = *peer;
+    }
+  }
+  else
+  {
+    scan->sock = *peer;
   }
 }
 
