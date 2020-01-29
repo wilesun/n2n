@@ -26,6 +26,16 @@
 #define N2N_MACNAMSIZ           18 /* AA:BB:CC:DD:EE:FF + NULL*/
 #define N2N_IF_MODE_SIZE        16 /* static | dhcp */
 
+typedef struct n2n_priv_config {
+  char                tuntap_dev_name[N2N_IFNAMSIZ];
+  char                ip_mode[N2N_IF_MODE_SIZE];
+  char                ip_addr[N2N_NETMASK_STR_SIZE];
+  char                netmask[N2N_NETMASK_STR_SIZE];
+  char                device_mac[N2N_MACNAMSIZ];
+  int                 mtu;
+} n2n_priv_config_t;
+
+
 /* *************************************************** */
 
 #if defined(DUMMY_ID_00001) /* Disabled waiting for config option to enable it */
@@ -136,196 +146,211 @@ static int scan_address(char * ip_addr, size_t addr_size,
 }
 
 /* *************************************************** */
+int locaFromCMD(n2n_edge_conf_t* conf, n2n_priv_config_t* ec, const n2n_edge_cmd_t* cmd)
+{
+	int ret = -1;
+	int i;
+	char ip_mode[N2N_IF_MODE_SIZE]="static";
+	char ip_addr[N2N_NETMASK_STR_SIZE] = "";
+	char netmask[N2N_NETMASK_STR_SIZE]="255.255.255.0";
 
-//TODO use new API
+	if (cmd->enc_key)
+	{
+	    conf->encrypt_key = strdup(cmd->enc_key);
+	    traceEvent(TRACE_DEBUG, "encrypt_key = '%s'\n", cmd->enc_key);
+	}
+
+	if (cmd->ip_addr[0] != '\0')
+	{
+	    scan_address(ip_addr, N2N_NETMASK_STR_SIZE,
+	                 ip_mode, N2N_IF_MODE_SIZE,
+	                 cmd->ip_addr);
+	}
+	else
+	{
+	    traceEvent(TRACE_ERROR, "Ip address is not set.");
+	    goto out;
+	}
+
+	if (cmd->ip_netmask[0] != '\0')
+	{
+	    strncpy(netmask, cmd->ip_netmask, N2N_NETMASK_STR_SIZE);
+	}
+
+	snprintf(ec->ip_addr, sizeof(ec->ip_addr), "%s", ip_addr);
+	snprintf(ec->ip_mode, sizeof(ec->ip_mode), "%s", ip_mode);
+	snprintf(ec->netmask, sizeof(ec->netmask), "%s", netmask);
+
+	if (cmd->community[0] != '\0')
+	{
+	    strncpy((char *)conf->community_name, cmd->community, N2N_COMMUNITY_SIZE);
+	}
+	else
+	{
+	    traceEvent(TRACE_ERROR, "Community is not set.");
+	    goto out;
+	}
+
+	conf->drop_multicast = cmd->drop_multicast == 0 ? 0 : 1;
+	if (cmd->mac_addr[0] != '\0')
+	{
+	    strncpy(ec->device_mac, cmd->mac_addr, N2N_MACNAMSIZ);
+	}
+
+	conf->allow_routing = cmd->allow_routing == 0 ? 0 : 1;
+	for (i = 0; i < N2N_EDGE_NUM_SUPERNODES && i < EDGE_CMD_SUPERNODES_NUM; ++i)
+	{
+	    if (cmd->supernodes[i][0] != '\0')
+	    {
+	        strncpy(conf->sn_ip_array[conf->sn_num], cmd->supernodes[i], N2N_EDGE_SN_HOST_SIZE);
+	        traceEvent(TRACE_DEBUG, "Adding supernode[%u] = %s\n"
+				, (unsigned int)conf->sn_num, (conf->sn_ip_array[conf->sn_num]));
+	        ++conf->sn_num;
+	    }
+	}
+
+	ec->mtu = cmd->mtu;
+
+	ret = 0;
+out:
+	if(ret < 0)
+	{
+		if(conf->encrypt_key)
+			free(conf->encrypt_key);
+	}
+
+	return ret;
+}
+
 int start_edge(const n2n_edge_cmd_t* cmd)
 {
-    int     keep_on_running = 0;
-    int     local_port = 0 /* any port */;
-    char    tuntap_dev_name[N2N_IFNAMSIZ] = "tun0";
-    char    ip_mode[N2N_IF_MODE_SIZE]="static";
-    char    ip_addr[N2N_NETMASK_STR_SIZE] = "";
-    char    netmask[N2N_NETMASK_STR_SIZE]="255.255.255.0";
-    char    device_mac[N2N_MACNAMSIZ]="";
-    char *  encrypt_key=NULL;
-    n2n_edge_t eee;
-    int i;
+	int keep_on_running = 0;
+	int trace_level = 0;
+	int rc;
+	int local_port = 0 /* any port */;
+	char tuntap_dev_name[N2N_IFNAMSIZ] = "tun0";
+	char device_mac[N2N_MACNAMSIZ]="";
 
-    keep_on_running = 0;
-    pthread_mutex_lock(&status.mutex);
-    status.is_running = keep_on_running;
-    pthread_mutex_unlock(&status.mutex);
-    report_edge_status();
-    if (!cmd) {
-        traceEvent( TRACE_ERROR, "Empty cmd struct" );
-        return 1;
-    }
+	tuntap_dev tuntap;    /* a tuntap device */
+	n2n_edge_t *eee;      /* single instance for this program */
+	n2n_edge_conf_t conf; /* generic N2N edge config */
+	n2n_priv_config_t ec; /* config used for standalone program execution */
 
-    traceLevel = cmd->trace_vlevel;
-    traceLevel = traceLevel < 0 ? 0 : traceLevel;   /* TRACE_ERROR */
-    traceLevel = traceLevel > 4 ? 4 : traceLevel;   /* TRACE_DEBUG */
+	keep_on_running = 0;
+	pthread_mutex_lock(&status.mutex);
+	status.is_running = keep_on_running;
+	pthread_mutex_unlock(&status.mutex);
+	report_edge_status();
 
-    /* Random seed */
-    srand(time(NULL));
+	if (!cmd) {
+		traceEvent( TRACE_ERROR, "Empty cmd struct" );
+		return 1;
+	}
 
-    if (-1 == edge_init(&eee) )
-    {
-        traceEvent( TRACE_ERROR, "Failed in edge_init" );
-        return 1;
-    }
-    memset(&(eee.supernode), 0, sizeof(eee.supernode));
-    eee.supernode.family = AF_INET;
+	trace_level = cmd->trace_vlevel;
+	trace_level = trace_level < 0 ? 0 : trace_level;   /* TRACE_ERROR */
+	trace_level = trace_level > 4 ? 4 : trace_level;   /* TRACE_DEBUG */
+	setTraceLevel(trace_level);
 
-    if (cmd->vpn_fd < 0) {
-        traceEvent(TRACE_ERROR, "VPN socket is invalid.");
-        return 1;
-    }
-    eee.device.fd = cmd->vpn_fd;
-    if (cmd->enc_key)
-    {
-        encrypt_key = strdup(cmd->enc_key);
-        traceEvent(TRACE_DEBUG, "encrypt_key = '%s'\n", encrypt_key);
-    }
+	/* Random seed */
+	srand(time(NULL));
 
-    if (cmd->ip_addr[0] != '\0')
-    {
-        scan_address(ip_addr, N2N_NETMASK_STR_SIZE,
-                     ip_mode, N2N_IF_MODE_SIZE,
-                     cmd->ip_addr);
-    }
-    else
-    {
-        traceEvent(TRACE_ERROR, "Ip address is not set.");
-        free(encrypt_key);
-        return 1;
-    }
-    if (cmd->community[0] != '\0')
-    {
-        strncpy((char *)eee.community_name, cmd->community, N2N_COMMUNITY_SIZE);
-    }
-    else
-    {
-        traceEvent(TRACE_ERROR, "Community is not set.");
-        free(encrypt_key);
-        return 1;
-    }
-    eee.drop_multicast = cmd->drop_multicast == 0 ? 0 : 1;
-    if (cmd->mac_addr[0] != '\0')
-    {
-        strncpy(device_mac, cmd->mac_addr, N2N_MACNAMSIZ);
-    }
-    else
-    {
-        strncpy(device_mac, random_device_mac(), N2N_MACNAMSIZ);
-        traceEvent(TRACE_DEBUG, "random device mac: %s\n", device_mac);
-    }
-    eee.allow_routing = cmd->allow_routing == 0 ? 0 : 1;
-    for (i = 0; i < N2N_EDGE_NUM_SUPERNODES && i < EDGE_CMD_SUPERNODES_NUM; ++i)
-    {
-        if (cmd->supernodes[i][0] != '\0')
-        {
-            strncpy(eee.sn_ip_array[eee.sn_num], cmd->supernodes[i], N2N_EDGE_SN_HOST_SIZE);
-            traceEvent(TRACE_DEBUG, "Adding supernode[%u] = %s\n", (unsigned int)eee.sn_num, (eee.sn_ip_array[eee.sn_num]));
-            ++eee.sn_num;
-        }
-    }
-    eee.re_resolve_supernode_ip = cmd->re_resolve_supernode_ip == 0 ? 0 : 1;
-    if (cmd->ip_netmask[0] != '\0')
-    {
-        strncpy(netmask, cmd->ip_netmask, N2N_NETMASK_STR_SIZE);
-    }
+	/* Defaults */
+	edge_init_conf_defaults(&conf);
+	memset(&ec, 0, sizeof(ec));
+	ec.mtu = DEFAULT_MTU;
 
-    for (i=0; i< N2N_EDGE_NUM_SUPERNODES; ++i )
-    {
-        traceEvent(TRACE_NORMAL, "supernode %u => %s\n", i, (eee.sn_ip_array[i]));
-    }
-    supernode2addr(&(eee.supernode), eee.sn_ip_array[eee.sn_idx]);
-    if (encrypt_key == NULL)
-    {
-        traceEvent(TRACE_WARNING, "Encryption is disabled in edge.");
-        eee.null_transop = 1;
-    }
-    if (0 == strcmp("dhcp", ip_mode))
-    {
-        traceEvent(TRACE_NORMAL, "Dynamic IP address assignment enabled.");
-        eee.dyn_ip_mode = 1;
-    }
-    else
-    {
-        traceEvent(TRACE_NORMAL, "ip_mode='%s'", ip_mode);
-    }
-    if(tuntap_open(&(eee.device), tuntap_dev_name, ip_mode, ip_addr, netmask, device_mac, cmd->mtu) < 0)
-    {
-        traceEvent(TRACE_ERROR, "Failed in tuntap_open");
-        free(encrypt_key);
-        return 1;
-    }
-    if(local_port > 0)
-    {
-        traceEvent(TRACE_NORMAL, "Binding to local port %d", (signed int)local_port);
-    }
-    if (encrypt_key)
-    {
-        if(edge_init_twofish(&eee, (uint8_t *)(encrypt_key), strlen(encrypt_key)) < 0)
-        {
-            traceEvent(TRACE_ERROR, "twofish setup failed.\n");
-            free(encrypt_key);
-            return 1;
-        }
-        free(encrypt_key);
-        encrypt_key = NULL;
-    }
-    /* else run in NULL mode */
-    eee.udp_sock = open_socket(local_port, 1 /*bind ANY*/ );
-    if(eee.udp_sock < 0)
-    {
-        traceEvent(TRACE_ERROR, "Failed to bind main UDP port %u", (signed int)local_port);
-        return 1;
-    }
-    eee.udp_mgmt_sock = open_socket(N2N_EDGE_MGMT_PORT, 0 /* bind LOOPBACK*/ );
-    if(eee.udp_mgmt_sock < 0)
-    {
-        traceEvent( TRACE_ERROR, "Failed to bind management UDP port %u", (unsigned int)N2N_EDGE_MGMT_PORT );
-        return 1;
-    }
+	snprintf(ec.tuntap_dev_name, sizeof(ec.tuntap_dev_name), "%s", tuntap_dev_name);
 
-    /* set host addr, netmask, mac addr for UIP and init arp*/
+	if (cmd->vpn_fd < 0) {
+	    traceEvent(TRACE_ERROR, "VPN socket is invalid.");
+	    return 1;
+	}
+	tuntap.fd = cmd->vpn_fd;
+
+	if(locaFromCMD(&conf, &ec, cmd) < 0) {
+		traceEvent(TRACE_ERROR, "locaFromCMD failed.");
+		return 1;
+	}
+
+	if(edge_verify_conf(&conf) != 0) {
+		traceEvent(TRACE_ERROR, "edge_verify_conf failed.");
+		return 1;
+	}
+
+
+	traceEvent(TRACE_NORMAL, "Starting n2n edge %s %s", PACKAGE_VERSION, PACKAGE_BUILDDATE);
+
+	/* Random seed */
+	srand(time(NULL));
+
+	if(0 == strcmp("dhcp", ec.ip_mode)) {
+		traceEvent(TRACE_NORMAL, "Dynamic IP address assignment enabled.");
+
+		conf.dyn_ip_mode = 1;
+	} else
+		traceEvent(TRACE_NORMAL, "ip_mode='%s'", ec.ip_mode);
+
+	if(!(
+#ifdef __linux__
+		(ec.tuntap_dev_name[0] != 0) &&
+#endif
+		(ec.ip_addr[0] != 0)
+		))
+	{
+		traceEvent(TRACE_ERROR, "tuntap_dev_name = [%s] ec.ipaddr = [%s]."
+			, ec.tuntap_dev_name, ec.ip_addr);
+		return 1;
+	}
+
+	if(tuntap_open(&tuntap, ec.tuntap_dev_name, ec.ip_mode, ec.ip_addr, ec.netmask, ec.device_mac, ec.mtu) < 0)
+		return(-1);
+
+	if(conf.encrypt_key && !strcmp((char*)conf.community_name, conf.encrypt_key))
+		traceEvent(TRACE_WARNING, "Community and encryption key must differ, otherwise security will be compromised");
+
+	if((eee = edge_init(&tuntap, &conf, &rc)) == NULL) {
+		traceEvent(TRACE_ERROR, "Failed in edge_init");
+		exit(1);
+	}
+
+	/* set host addr, netmask, mac addr for UIP and init arp*/
     {
-        int match, i;
-        u8_t ip[4];
+        int i;
+		uint32_t ip;
         uip_ipaddr_t ipaddr;
         struct uip_eth_addr eaddr;
 
-        match = sscanf(ip_addr, "%d.%d.%d.%d", ip, ip + 1, ip + 2, ip + 3);
-        if (match != 4) {
-            traceEvent(TRACE_ERROR, "scan ip failed, ip: %s", ip_addr);
-            return 1;
-        }
-        uip_ipaddr(ipaddr, ip[0], ip[1], ip[2], ip[3]);
+		ip = inet_addr(ec.ip_addr);
+		memcpy(ipaddr, &ip, sizeof(ipaddr));
         uip_sethostaddr(ipaddr);
-        match = sscanf(netmask, "%d.%d.%d.%d", ip, ip + 1, ip + 2, ip + 3);
-        if (match != 4) {
-            traceEvent(TRACE_ERROR, "scan netmask error, ip: %s", netmask);
-            return 1;
-        }
-        uip_ipaddr(ipaddr, ip[0], ip[1], ip[2], ip[3]);
+		ip = inet_addr(ec.netmask);
+		memcpy(ipaddr, &ip, sizeof(ipaddr));
         uip_setnetmask(ipaddr);
         for (i = 0; i < 6; ++i) {
-            eaddr.addr[i] = eee.device.mac_addr[i];
+            eaddr.addr[i] = tuntap.mac_addr[i];
         }
         uip_setethaddr(eaddr);
 
         uip_arp_init();
     }
 
-    keep_on_running = 1;
+	keep_on_running = 1;
     pthread_mutex_lock(&status.mutex);
     status.is_running = keep_on_running;
     pthread_mutex_unlock(&status.mutex);
     report_edge_status();
-    traceEvent(TRACE_NORMAL, "edge started");
+	traceEvent(TRACE_NORMAL, "edge started");
+	rc = run_edge_loop(eee, &keep_on_running);
+	print_edge_stats(eee);
 
-    return run_edge_loop(&eee, &keep_on_running);
+	/* Cleanup */
+	edge_term(eee);
+	tuntap_close(&tuntap);
+
+	if(conf.encrypt_key) free(conf.encrypt_key);
+
+	return(rc);
 }
 
 int stop_edge(void)

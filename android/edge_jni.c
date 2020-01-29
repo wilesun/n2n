@@ -348,7 +348,7 @@ void* EdgeRoutine(void* cmd)
     }
 
     n2n_edge_cmd_t* c = cmd;
-    int ret = start_edge(c);
+    start_edge(c);
     free(c->enc_key);
     free(c->enc_key_file);
     c->enc_key = NULL;
@@ -358,7 +358,7 @@ void* EdgeRoutine(void* cmd)
         (*jvm)->DetachCurrentThread(jvm);
     }
 
-    return (void*)ret;
+    return NULL;
 }
 
 void report_edge_status(void)

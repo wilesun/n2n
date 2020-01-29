@@ -45,15 +45,20 @@ int tuntap_open(tuntap_dev *device,
                 const char * device_mac,
 		        int mtu) {
     int i, n_matched;
-    unsigned int mac[6];
 
-    n_matched = sscanf(device_mac, "%x:%x:%x:%x:%x:%x", mac, mac + 1, mac + 2, mac + 3, mac + 4, mac + 5);
-    if (n_matched != 6) {
-        return -1;
-    }
-    memset(device->mac_addr, 0, sizeof(device->mac_addr));
-    for (i = 0; i < 6; i++)
-        device->mac_addr[i] = mac[i];
+	if(device_mac && device_mac[0]) {
+		/* Use the user-provided MAC */
+		str2mac(device->mac_addr, device_mac);
+	} else {
+	/* Set an explicit random MAC to know the exact MAC in use. Manually
+	 * reading the MAC address is not safe as it may change internally
+	 * also after the TAP interface UP status has been notified. */
+		for(i = 0; i < 6; i++)
+			device->mac_addr[i] = rand();
+
+		device->mac_addr[0] &= ~0x01; /* Clear multicast bit */
+		device->mac_addr[0] |= 0x02;  /* Set locally-assigned bit */
+	}
     device->ip_addr = inet_addr(device_ip);
     device->device_mask = inet_addr(device_mask);
     device->mtu = mtu;

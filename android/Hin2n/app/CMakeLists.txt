@@ -35,7 +35,7 @@ target_link_libraries(edge log)
 
 add_library(n2n SHARED
                 src/main/cpp/n2n/n2n.c
-                src/main/cpp/n2n/n2n_keyfile.c
+		#src/main/cpp/n2n/n2n_keyfile.c
                 src/main/cpp/n2n/wire.c
                 src/main/cpp/n2n/minilzo.c
                 src/main/cpp/n2n/twofish.c
@@ -44,7 +44,7 @@ add_library(n2n SHARED
                 src/main/cpp/n2n/transform_tf.c
                 src/main/cpp/n2n/transform_aes.c
                 src/main/cpp/n2n/android/tuntap_android.c
-                src/main/cpp/n2n/version.c
+		#src/main/cpp/n2n/version.c
             )
 target_link_libraries(n2n uip)
 target_link_libraries(n2n log)
