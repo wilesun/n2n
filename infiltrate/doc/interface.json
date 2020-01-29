@@ -1,0 +1,105 @@
+S: 中转服务器
+C: pad端
+H: PC端
+P: C和H的代理模块
+
+P->S: 登陆
+{
+	"cmd":"login",
+	"ip":"192.168.1.5",
+	"port":"45124",
+	"mode":"host",	//	"client"
+	"name":"Shadowbringers"
+}
+
+S->P: 登陆回应
+{
+	"cmd":"login_ack",
+	"next_hb":60,	// 单位:秒
+	"ret":0,
+	"msg":"ok",
+}
+
+P->S: 心跳
+{
+	"cmd":"heart_beat",
+	"ip":"192.168.1.5",
+	"name":"Shadowbringers",
+	"connected":"1" // 有没有连人
+}
+
+S->P: 心跳回应
+{
+	"cmd":"heart_ack",
+	"ret":0,
+	"msg":"ok",
+	"next_hb":60	// 单位:秒
+}
+
+P->S: 获取nat后的IP与端口信息(登陆回应后调用,连接服务器的副端口)
+{
+	"cmd":"get_nat_type",
+	"ip":"192.168.1.5",
+	"port":"45124",
+	"name":"Shadowbringers"
+}
+
+S->P: nat回应
+{
+	"cmd":"nat_type_ack",
+	"ip":"192.168.1.5",	// NAT后IP
+	"port":"45124",		// NAT后port
+	"type":"2",			// @see c_type.h C_NAT_TYPE
+	"ret":0,
+	"msg":"ok"
+}
+
+P->S: 代理请求
+{
+	"cmd":"proxy_request",
+	"ip":"192.168.1.5",
+	"name":"Lightbringers"
+	"dst_ip":"192.168.1.5",
+	"dst_name":"Shadowbringers"
+}
+
+S->P: 代理回应
+{
+	"cmd":"proxy_ack",
+	"ret":0,
+	"msg":"ok",
+}
+
+// 收到proxy_ack后绑定仨连续端口
+// 连续俩get_nat_port包给服务器先
+// 第仨端口用来穿
+P->S: 端口猜测
+{
+	"cmd":"get_nat_port",
+	"ip":"192.168.1.5",
+	"port":"45124",
+	"num":"0",	// 序号,第一个包还是第二个包,连续发两个，用于端口预测
+	"name":"Shadowbringers",
+	"dst_ip":"192.168.1.5",
+	"dst_name":"Lightbringers"
+}
+
+S->P: 代理命令下发 (作为"get_nat_port"的回应包)
+{
+	"cmd":"proxy_task",
+	"dst_ip":"192.168.1.5",
+	"guess_port":"45124",	// 预测的对方端口
+	"mode":"0",	// 区别 offset 使用方式
+	"offset":"3"// 偏移量(mode(0),同端口连3次;mode(1):端口加0/1/2,连三个端口)
+}
+
+P->S: 代理情况回应
+{
+	"cmd":"proxy_task_ack",
+	"ret":0,
+	"msg":"ok",
+	"ip":"192.168.1.5",
+	"name":"Shadowbringers"
+}
+
+
