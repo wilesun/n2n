@@ -396,3 +396,18 @@ int sock_equal(const n2n_sock_t * a,
   return(1);
 }
 
+void inf_get_fds(int* fds, int* fd_num);
+int edge_fd_set_inf(int parm_max_sock, fd_set* socket_mask, int* proxy_fds, int* proxy_fd_num)
+{
+  int max_sock = parm_max_sock;
+  int i = 0;
+  inf_get_fds(proxy_fds, proxy_fd_num);
+  for(i = 0; i < *proxy_fd_num; i++)
+  {
+    FD_SET(proxy_fds[i], socket_mask);
+    max_sock = max(max_sock, proxy_fds[i]);
+  }
+
+  return max_sock;
+}
+

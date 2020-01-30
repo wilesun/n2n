@@ -30,12 +30,12 @@ limitations under the License.
 
 int debug_level = 10;
 
-#define INFP_DEFAFULT_PORT 45124 // TODO: é…ç½®æ–‡ä»¶è·å–
-#define INFP_POLL_MAX 20		// éšæ‰‹å†™çš„, ç›®å‰åªç›‘å¬12ä¸ªç«¯å£
+#define INFP_DEFAFULT_PORT 45124 // TODO: ÅäÖÃÎÄ¼ş»ñÈ¡
+#define INFP_POLL_MAX 20		// ËæÊÖĞ´µÄ, Ä¿Ç°Ö»¼àÌı12¸ö¶Ë¿Ú
 
 infp_t gl_infp = {};
 struct pollfd poll_arr[INFP_POLL_MAX];
-int curfds = 0;	// å½“å‰pollfdä¸­æœ€å¤§æœ‰æ•ˆä¸‹æ ‡
+int curfds = 0;	// µ±Ç°pollfdÖĞ×î´óÓĞĞ§ÏÂ±ê
 
 void infp_timeout(unsigned long data)
 {
@@ -59,33 +59,33 @@ int infp_init(void)
 {
 	int i = 0;
 
-	// åˆå§‹åŒ–jiffies
+	// ³õÊ¼»¯jiffies
 	init_timer_module();
 
 	init_timer(&gl_infp.timer);
 	gl_infp.timer.function = infp_timeout;
 	add_timer(&gl_infp.timer);
 
-	//åˆå§‹åŒ–é“¾è¡¨
+	//³õÊ¼»¯Á´±í
 	INIT_LIST_HEAD(&gl_infp.dev_list);
 	for(i = 0; i < INFP_HASH_MAX; i++)
 	{
 		INIT_HLIST_HEAD(&gl_infp.dev_hash[i]);
 	}
 
-	//åˆå§‹åŒ–ç«¯å£è¡¨
+	//³õÊ¼»¯¶Ë¿Ú±í
 	gl_infp.main_port = INFP_DEFAFULT_PORT;
 	gl_infp.back_port = INFP_DEFAFULT_PORT + 1;
 
-	//åˆå§‹åŒ–sock
+	//³õÊ¼»¯sock
 	if(create_udp(&gl_infp.main_sock, 0, htons(gl_infp.main_port)) < 0)
 		return -1;
-	// è®¾ç½®éé˜»å¡
+	// ÉèÖÃ·Ç×èÈû
 	set_sock_nonblock(gl_infp.main_sock.fd);
 
 	if(create_udp(&gl_infp.back_sock, 0, htons(gl_infp.back_port)) < 0)
 		return -1;
-	// è®¾ç½®éé˜»å¡
+	// ÉèÖÃ·Ç×èÈû
 	set_sock_nonblock(gl_infp.back_sock.fd);
 
 	return 0;
@@ -120,7 +120,7 @@ int infp_main_recv(sock_t* sock)
 {
 	struct sockaddr_in addr;
 	int ret = 0;
-	// æ€»ä¼šæ”¶åŒ…æŠ¥é”™çš„
+	// ×Ü»áÊÕ°ü±¨´íµÄ
 	while(udp_sock_recv(sock, &addr) > 0)
 	{
 		infp_recv_do(sock, &addr);
@@ -154,7 +154,7 @@ int infp_poll_run(int timeout)
 				else if(poll_arr[i].fd == gl_infp.back_sock.fd)
 					sock = &gl_infp.back_sock;
 				else
-					goto out;	// æ²¡è¿™ç§æƒ…å†µ
+					goto out;	// Ã»ÕâÖÖÇé¿ö
 
 				if(infp_main_recv(sock))
 				{
@@ -163,7 +163,7 @@ int infp_poll_run(int timeout)
 				}
 			}
 
-			// æ²¡æœ‰POLLOUTè¿™ä¸ªè¯´æ³•, ç›´æ¥sendto
+			// Ã»ÓĞPOLLOUTÕâ¸öËµ·¨, Ö±½Ósendto
 			if(poll_arr[i].events & POLLERR)
 			{
 				goto out;

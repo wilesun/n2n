@@ -20,8 +20,8 @@ limitations under the License.
 #ifdef WIN32
 #include <WinSock2.h>
 #include <WS2tcpip.h>
-#define poll WSAPoll
-#define close closesocket
+#define poll(a, b, c) WSAPoll(a, b, c)
+#define close(a) closesocket(a)
 #else
 #include <netdb.h>
 #include <sys/ioctl.h>

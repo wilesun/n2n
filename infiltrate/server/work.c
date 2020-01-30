@@ -28,6 +28,17 @@ void memxor(char* data, int len)
 		data[i] ^= 0x71;
 }
 
+void inf_get_fds(int* fds, int* fd_num)
+{
+	int fd_nums = 0;
+	*fd_num = 0;
+
+	fds[fd_nums++] = gl_infp.main_sock.fd;
+	fds[fd_nums++] = gl_infp.back_sock.fd;
+
+	*fd_num = fd_nums;
+}
+
 int infp_server_send(infp_cli_t *cli, sock_t* sock, char *data, int len)
 {
 	struct sockaddr_in addr;
