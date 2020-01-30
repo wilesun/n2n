@@ -21,7 +21,7 @@ CFLAGS+=-I..
 LDFLAGS+=-L..
 CFLAGS+=$(DEBUG) $(OPTIMIZATION) $(WARN)
 
-N2N_LIB=../libn2n.a ../libinfp_cli.a -lm
+N2N_LIB=../libn2n.a ../libinfp_cli.a
 
 TOOLS=n2n-benchmark
 TOOLS+=@ADDITIONAL_TOOLS@
@@ -30,10 +30,10 @@ TOOLS+=@ADDITIONAL_TOOLS@
 all: $(TOOLS)
 
 n2n-benchmark: benchmark.c $(N2N_LIB) $(HEADERS)
-	$(CC) $(CFLAGS) $< $(N2N_LIB) $(LIBS_EDGE) -o $@
+	$(CC) $(CFLAGS) $< $(N2N_LIB) -lm $(LIBS_EDGE) -o $@
 
 n2n-decode: n2n_decode.c $(N2N_LIB) $(HEADERS)
-	$(CC) $(CFLAGS) $< $(N2N_LIB) $(LIBS_EDGE) -lpcap -o $@
+	$(CC) $(CFLAGS) $< $(N2N_LIB) -lm $(LIBS_EDGE) -lpcap -o $@
 
 .c.o: $(HEADERS) ../Makefile Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
