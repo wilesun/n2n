@@ -581,14 +581,18 @@ int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr)
 				{
 					memcpy(&proxy->addr, addr, sizeof(proxy->addr));
 					proxy->fd = sock->fd;	// fd 交给proxy接管
-					sock->fd = -1;
 					proxy->uptime = jiffies;
 				}
 
 				for(i = 0; i < 3; i++)
 				{
-					sock_del_poll(poll_arr, INFP_POLL_MAX, &gl_cli_infp.proxy_sock[i]);
-					close_sock(&gl_cli_infp.proxy_sock[i]);
+					if(gl_cli_infp.proxy_sock[i].fd > 0)
+					{
+						sock_del_poll(poll_arr, INFP_POLL_MAX, &gl_cli_infp.proxy_sock[i]);
+						if(gl_cli_infp.proxy_sock[i].fd == proxy->fd)
+							gl_cli_infp.proxy_sock[i].fd = -1;
+						close_sock(&gl_cli_infp.proxy_sock[i]);
+					}
 				}
 			}
 			cJSON_Delete(root);
