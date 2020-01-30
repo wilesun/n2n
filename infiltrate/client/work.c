@@ -415,7 +415,7 @@ int cli_infp_do_stun_hello(cli_infp_t* infp, int offset, int mode, __u32 ip, __u
 
 	if(mode)
 	{
-		for(i = 0; i < offset > GUESE_PORT_MAX ? GUESE_PORT_MAX : offset; i++)
+		for(i = 0; i < (offset > GUESE_PORT_MAX ? GUESE_PORT_MAX : offset); i++)
 		{
 			cli_infp_send_stun_hello(&infp->proxy_sock[0], infp, ip, htons(port+i));
 		}
@@ -428,13 +428,13 @@ int cli_infp_do_stun_hello(cli_infp_t* infp, int offset, int mode, __u32 ip, __u
 	}
 	else
 	{
-		for(i = 0; i < offset > GUESE_PORT_MAX ? GUESE_PORT_MAX : offset; i++)
+		for(i = 0; i < (offset > GUESE_PORT_MAX ? GUESE_PORT_MAX : offset); i++)
 		{
 			printf("sendto %s:%d\n", IpToStr(ip), port);
 			cli_infp_send_stun_hello(&infp->proxy_sock[i], infp, ip, htons(port));
 		}
 
-		for(i = 0; i < offset > GUESE_PORT_MAX ? GUESE_PORT_MAX : offset; i++)
+		for(i = 0; i < (offset > GUESE_PORT_MAX ? GUESE_PORT_MAX : offset); i++)
 		{
 			curfds = sock_add_poll(poll_arr, INFP_POLL_MAX, &infp->proxy_sock[i]);
 			if(curfds < 0)

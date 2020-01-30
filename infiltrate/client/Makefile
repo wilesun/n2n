@@ -1,7 +1,7 @@
 CFLAGS += -I./include -I../common/include -O2 -Wall
 LDFLAGS += -lm
 
-OBJS = main.o work.o ../common/cJSON.o ../common/sock.o ../common/timer.o
+OBJS = main.o work.o ../common/cJSON.o ../common/sock.o ../common/timer.o ../common/debug.o
 
 SAY=echo "libinfp_cli.a"
 EXEC=libinfp_cli.a

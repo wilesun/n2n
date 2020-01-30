@@ -20,7 +20,7 @@ limitations under the License.
 
 void _cym_log(char const * format, ...)
 {
-	static init = 1;
+	static int init = 1;
 	FILE *fd = NULL;
 	va_list ap;
 	
