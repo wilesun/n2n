@@ -76,11 +76,19 @@ void infp_timeout(unsigned long data)
 int infp_init(const char *server_addr, __u8 *device_mac)
 {
 	int try_times = 0;
+	int i = 0;
 
 	// ≥ı ºªØjiffies
 	init_timer_module();
 
-	snprintf(gl_cli_infp.name, sizeof(gl_cli_infp.name), "%s", device_mac);
+	INIT_LIST_HEAD(&gl_cli_infp.proxy_list);
+	for (i = 0; i < INFP_HASH_MAX; i++)
+	{
+		INIT_HLIST_HEAD(&gl_cli_infp.proxy_hash[i]);
+	}
+
+	snprintf(gl_cli_infp.name, sizeof(gl_cli_infp.name), "%02X:%02X:%02X:%02X:%02X:%02X"
+		, device_mac[0], device_mac[1], device_mac[2], device_mac[3], device_mac[4], device_mac[5]);
 
 	// TODO: support dynamic domain
 	gl_cli_infp.server_ip = StrToIp(server_addr);
