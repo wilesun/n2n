@@ -52,12 +52,6 @@ typedef struct n2n_priv_config {
 #endif
 } n2n_priv_config_t;
 
-int my_exit(int ret)
-{
-	system("pause");
-	exit(ret);
-}
-
 /* ***************************************************** */
 
 /** Find the address and IP mode for the tuntap device.
@@ -197,7 +191,7 @@ static void help() {
   win_print_available_adapters();
 #endif
 
-  my_exit(0);
+  exit(0);
 }
 
 /* *************************************************** */
@@ -301,7 +295,7 @@ static int setOption(int optkey, char *optargument, n2n_priv_config_t *ec, n2n_e
     if(optargument) {
       if(edge_conf_add_supernode(conf, optargument) != 0) {
         traceEvent(TRACE_WARNING, "Too many supernodes!");
-		my_exit(1);
+		exit(1);
       }
       break;
     }
@@ -708,14 +702,14 @@ int main(int argc, char* argv[]) {
 #endif
 
   if(tuntap_open(&tuntap, ec.tuntap_dev_name, ec.ip_mode, ec.ip_addr, ec.netmask, ec.device_mac, ec.mtu) < 0)
-	my_exit(-1);
+	exit(-1);
 
   if(conf.encrypt_key && !strcmp((char*)conf.community_name, conf.encrypt_key))
     traceEvent(TRACE_WARNING, "Community and encryption key must differ, otherwise security will be compromised");
 
   if((eee = edge_init(&tuntap, &conf, &rc)) == NULL) {
     traceEvent(TRACE_ERROR, "Failed in edge_init");
-	my_exit(1);
+	exit(1);
   }
 
 #ifndef WIN32
@@ -761,7 +755,7 @@ int main(int argc, char* argv[]) {
 
   if(conf.encrypt_key) free(conf.encrypt_key);
 
-  my_exit(rc);
+  exit(rc);
 
   return(rc);
 }
