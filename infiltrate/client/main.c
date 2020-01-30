@@ -77,6 +77,8 @@ int infp_init(const char *server_addr, __u8 *device_mac)
 {
 	int try_times = 0;
 	int i = 0;
+	char server_ipstr[32];
+	sscanf(server_addr, "%[^:]", server_ipstr);
 
 	// ≥ı ºªØjiffies
 	init_timer_module();
@@ -91,7 +93,7 @@ int infp_init(const char *server_addr, __u8 *device_mac)
 		, device_mac[0], device_mac[1], device_mac[2], device_mac[3], device_mac[4], device_mac[5]);
 
 	// TODO: support dynamic domain
-	gl_cli_infp.server_ip = StrToIp(server_addr);
+	gl_cli_infp.server_ip = StrToIp(server_ipstr);
 	gl_cli_infp.svr_m_port = htons(INFP_DEFAFULT_PORT);
 	gl_cli_infp.svr_b_port = htons(INFP_DEFAFULT_PORT+1);
 
