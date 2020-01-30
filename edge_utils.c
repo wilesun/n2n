@@ -409,6 +409,7 @@ static void register_with_new_peer(n2n_edge_t * eee,
   struct peer_info * scan;
   macstr_t mac_buf;
   n2n_sock_str_t sockbuf;
+  time_t now = time(NULL);
 
   HASH_FIND_PEER(eee->pending_peers, mac, scan);
 
@@ -419,7 +420,7 @@ static void register_with_new_peer(n2n_edge_t * eee,
     memcpy(scan->mac_addr, mac, N2N_MAC_SIZE);
     scan->sock = *peer;
     scan->timeout = REGISTER_SUPER_INTERVAL_DFL; /* TODO: should correspond to the peer supernode registration timeout */
-    scan->last_seen = time(NULL); /* Don't change this it marks the pending peer for removal. */
+    scan->last_seen = now; /* Don't change this it marks the pending peer for removal. */
 
     HASH_ADD_PEER(eee->pending_peers, scan);
 
@@ -472,7 +473,7 @@ static void register_with_new_peer(n2n_edge_t * eee,
 
     register_with_local_peers(eee);
   }
-  else if(scan->p2p_try < 10)
+  else if(now - scan->last_seen > 2 && scan->p2p_try < 10)
   {
     // -1 failed, 0: send proxy, 1: proxy ok
     int fd = -1;
@@ -1736,6 +1737,8 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
 #ifdef __ANDROID_NDK__
   time_t lastArpPeriod=0;
 #endif
+  int inf_fds[20];
+  int inf_fd_num = 0;
   int proxy_fds[2048];  // 最多同时连接2048个fd
   int proxy_fd_num = 0;
 
@@ -1747,6 +1750,7 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
 #endif
 
   memset(proxy_fds, 0, sizeof(proxy_fds));
+  memset(inf_fds, 0, sizeof(inf_fds));
   *keep_running = 1;
   update_supernode_reg(eee, time(NULL));
 
@@ -1762,9 +1766,6 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
     fd_set socket_mask;
     struct timeval wait_time;
     time_t nowTime;
-
-    if(infp_poll_run(30))
-        break;
 
     run_timer_list();
 
@@ -1785,9 +1786,10 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
 #endif
 
     max_sock = edge_fd_set_proxy(max_sock, &socket_mask, proxy_fds, &proxy_fd_num);
+    max_sock = edge_fd_set_inf(max_sock, &socket_mask, inf_fds, &inf_fd_num);
 
-    wait_time.tv_sec = 0;
-    wait_time.tv_usec = 30;
+    wait_time.tv_sec = 10;
+    wait_time.tv_usec = 0;
 
     rc = select(max_sock+1, &socket_mask, NULL, NULL, &wait_time);
     nowTime=time(NULL);
@@ -1814,6 +1816,13 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
 		 * socket. */
 		readFromIPSocket(eee, proxy_fds[i]);
 	      }
+	  }
+
+	  for(i = 0; i < inf_fd_num; i++) {
+		  if(FD_ISSET(inf_fds[i], &socket_mask)) {
+			infp_poll_run(1);
+			break;
+		  }
 	  }
 
 

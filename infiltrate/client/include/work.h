@@ -12,6 +12,7 @@ void cli_infp_check_proxy_list(void);
 int infp_cli_init(const char *sn_addr, __u8 *device_mac);
 int inf_proxy_check_send(void* p_mac, void* p_addr, int* fd);
 void inf_proxy_get_fds(int* fds, int* fd_num);
+void inf_get_fds(int* fds, int* fd_num);
 int infp_poll_run(int timeout);
 
 #endif

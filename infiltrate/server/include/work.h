@@ -7,6 +7,7 @@ void infp_del_cli(infp_cli_t * del);
 int infp_recv_do(sock_t * sock, struct sockaddr_in * addr);
 int infp_poll_run(int timeout);
 int infp_svr_init(void);
+void inf_get_fds(int* fds, int* fd_num);
 
 
 #endif

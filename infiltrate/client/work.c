@@ -129,6 +129,23 @@ void inf_proxy_get_fds(int* fds, int* fd_num)
 	*fd_num = fd_nums;
 }
 
+void inf_get_fds(int* fds, int* fd_num)
+{
+	int fd_nums = 0;
+	*fd_num = 0;
+	int i = 0;
+
+	fds[fd_nums++] = gl_cli_infp.main_sock.fd;
+	for(i = 0; i < 3; i++)
+	{
+		if(gl_cli_infp.proxy_sock[i].fd > 0)
+			fds[fd_nums++] = gl_cli_infp.proxy_sock[i].fd;
+	}
+
+	*fd_num = fd_nums;
+}
+
+
 int cli_infp_send(__u32 ip, __u16 port, sock_t* sock, char *data, int len)
 {
 	int ret;

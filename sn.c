@@ -1055,19 +1055,19 @@ static int run_loop(n2n_sn_t * sss) {
   uint8_t pktbuf[N2N_SN_PKTBUF_SIZE];
   time_t last_purge_edges = 0;
   struct sn_community *comm, *tmp;
+  int inf_fds[20];
+  int inf_fd_num = 0;
 
+  memset(inf_fds, 0, sizeof(inf_fds));
   sss->start_time = time(NULL);
 
   while(keep_running) {
-    int rc;
+    int rc, i;
     ssize_t bread;
     int max_sock;
     fd_set socket_mask;
     struct timeval wait_time;
     time_t now=0;
-
-    if(infp_poll_run(30))
-        break;
 
     run_timer_list();
 
@@ -1077,12 +1077,22 @@ static int run_loop(n2n_sn_t * sss) {
     FD_SET(sss->sock, &socket_mask);
     FD_SET(sss->mgmt_sock, &socket_mask);
 
+	max_sock = edge_fd_set_inf(max_sock, &socket_mask, inf_fds, &inf_fd_num);
+
     wait_time.tv_sec = 10; wait_time.tv_usec = 0;
     rc = select(max_sock+1, &socket_mask, NULL, NULL, &wait_time);
 
     now = time(NULL);
 
     if(rc > 0) {
+
+      for(i = 0; i < inf_fd_num; i++) {
+		  if(FD_ISSET(inf_fds[i], &socket_mask)) {
+			infp_poll_run(1);
+			break;
+		  }
+	  }
+
       if(FD_ISSET(sss->sock, &socket_mask)) {
 	struct sockaddr_in  sender_sock;
 	socklen_t           i;

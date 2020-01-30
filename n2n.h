@@ -319,4 +319,7 @@ int quick_edge_init(char *device_name, char *community_name,
 		    char *supernode_ip_address_port,
 		    int *keep_on_running);
 
+int edge_fd_set_inf(int parm_max_sock, fd_set* socket_mask, int* proxy_fds, int* proxy_fd_num);
+
+
 #endif /* _N2N_H_ */
