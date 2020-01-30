@@ -64,10 +64,14 @@ void infp_timeout(unsigned long data)
 		CYM_LOG(LV_ERROR, "???\n");
 	}
 
+	CYM_LOG(LV_FATAL, "jiffies = %lu\n", jiffies);
+
 	if(!list_empty(&infp->proxy_list))
 	{
 		cli_infp_check_proxy_list();
 	}
+
+	CYM_LOG(LV_FATAL, "check proxy done\n");
 
 	// 5秒进来一次算了
 	mod_timer(&gl_cli_infp.timer, jiffies + 5*HZ);
@@ -103,7 +107,7 @@ int infp_init(const char *server_addr, __u8 *device_mac)
 	add_timer(&gl_cli_infp.timer);
 
 	//初始化sock
-	gl_cli_infp.main_sock.fd = -1;
+	gl_cli_infp.main_sock.fd = INVALID_SOCKET;
 	gl_cli_infp.main_port = (rand() % 35535) + 12000;
 	try_times = 0;
 	while(create_udp(&gl_cli_infp.main_sock, 0, htons(gl_cli_infp.main_port)) < 0)
@@ -129,7 +133,7 @@ int init_poll(void)
 	memset(poll_arr, 0, sizeof(poll_arr));
 	for(i = 0; i < INFP_POLL_MAX; i++)
 	{
-		poll_arr[i].fd = -1;
+		poll_arr[i].fd = INVALID_SOCKET;
 	}
 
 	curfds = sock_add_poll(poll_arr, INFP_POLL_MAX, &gl_cli_infp.main_sock);
@@ -137,6 +141,8 @@ int init_poll(void)
 	{
 		return -1;
 	}
+
+	CYM_LOG(LV_FATAL, "main fd = %d\n", gl_cli_infp.main_sock.fd);
 
 	return 0;
 }
@@ -200,7 +206,7 @@ int infp_poll_run(int timeout)
 			if(poll_arr[i].events & POLLIN)
 			{
 				int index = 0;
-				for(index = 0; index < 3; index++)
+				for(index = 0; index < GUESE_PORT_MAX; index++)
 				{
 					if(gl_cli_infp.proxy_sock[index].poll_i == i)
 						break;

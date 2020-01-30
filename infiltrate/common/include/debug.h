@@ -11,10 +11,13 @@
 #define LV_DEBUG	7
 
 extern int debug_level;
+void _cym_log(char const * format, ...);
 
 #define CYM_LOG(n, s, ...) do{\
-				if(debug_level > n)\
+				if(debug_level > n) {\
 					printf(s,##__VA_ARGS__);\
+					_cym_log(s,##__VA_ARGS__);\
+				}\
 			}while(0)
 
 #endif

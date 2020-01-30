@@ -39,6 +39,12 @@ limitations under the License.
 
 #include "c_type.h"
 
+#ifndef INVALID_SOCKET
+#define INVALID_SOCKET (-1)
+#endif
+
+#define GUESE_PORT_MAX 3
+
 typedef struct sock_s
 {
 	int fd;

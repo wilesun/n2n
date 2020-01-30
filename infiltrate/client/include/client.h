@@ -52,10 +52,10 @@ typedef struct cli_infp_s
 	__u16 svr_b_port;		// 服务器副端口 (网络序)
 
 	__u16 main_port;		// 与服务器连接的主端口, 主连接用
-	__u16 proxy_port[3];	// 准备的代理端口
+	__u16 proxy_port[GUESE_PORT_MAX];	// 准备的代理端口
 
 	sock_t main_sock;		// 对应main_port
-	sock_t proxy_sock[3];	// 对应proxy_port (代理主连接)
+	sock_t proxy_sock[GUESE_PORT_MAX];	// 对应proxy_port (代理主连接)
 
 	__u32 nat_type;			// @see C_NAT_TYPE
 	char  name[32];			// 客户端标识 (MAC地址)

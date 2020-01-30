@@ -31,6 +31,7 @@
 #endif /* __ANDROID_NDK__ */
 
 #include "infiltrate/client/include/work.h"
+#include "debug.h"
 
 #define SOCKET_TIMEOUT_INTERVAL_SECS    10
 #define REGISTER_SUPER_INTERVAL_DFL     20 /* sec, usually UDP NAT entries in a firewall expire after 30 seconds */
@@ -476,11 +477,12 @@ static void register_with_new_peer(n2n_edge_t * eee,
   else if(now - scan->last_seen > 2 && scan->p2p_try < 10)
   {
     // -1 failed, 0: send proxy, 1: proxy ok
-    int fd = -1;
+    int fd = INVALID_SOCKET;
     int ret = inf_proxy_check_send((void*)mac, (void*)&(scan->sock), &fd);
     if(ret > 0)
     {
        scan->p2p_fd = fd;
+	   CYM_LOG(LV_FATAL, "send proxy p2p fd = %d\n", fd);
        send_register(eee, &(scan->sock), mac, scan->p2p_fd);
     }
     else if(ret == 0)
@@ -1262,7 +1264,7 @@ static int send_packet(n2n_edge_t * eee,
   n2n_sock_str_t sockbuf;
   n2n_sock_t destination;
   macstr_t mac_buf;
-  int sock_fd = -1;
+  int sock_fd = INVALID_SOCKET;
 
   /* hexdump(pktbuf, pktlen); */
 
@@ -1814,6 +1816,7 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
 		  if(FD_ISSET(proxy_fds[i], &socket_mask)) {
 		/* Read a cooked socket from the internet socket (unicast). Writes on the TAP
 		 * socket. */
+		//	CYM_LOG(LV_FATAL, "fd [%d] isset\n", proxy_fds[i]);
 		readFromIPSocket(eee, proxy_fds[i]);
 	      }
 	  }
@@ -2003,6 +2006,27 @@ void edge_init_conf_defaults(n2n_edge_conf_t *conf) {
   }
 }
 
+n2n_edge_t *gl_eee = NULL;
+void edge_p2p_fd_close(char *macstr)
+{
+	uint8_t mac[6] = { 0 };
+	struct peer_info *peer;
+
+	str2mac(mac, macstr);
+
+	if (gl_eee)
+	{
+		HASH_FIND_PEER(gl_eee->known_peers, mac, peer);
+		if (!peer)
+			HASH_FIND_PEER(gl_eee->pending_peers, mac, peer);
+
+		if (peer)
+		{
+			peer->p2p_fd = INVALID_SOCKET;
+		}
+	}
+}
+
 /* ************************************** */
 
 const n2n_edge_conf_t* edge_get_conf(const n2n_edge_t *eee) {
@@ -2023,7 +2047,6 @@ int edge_conf_add_supernode(n2n_edge_conf_t *conf, const char *ip_and_port) {
 }
 
 /* ************************************** */
-
 int quick_edge_init(char *device_name, char *community_name,
 		    char *encrypt_key, char *device_mac,
 		    char *local_ip_address,
@@ -2054,8 +2077,10 @@ int quick_edge_init(char *device_name, char *community_name,
   /* Init edge */
   if((eee = edge_init(&tuntap, &conf, &rv)) == NULL)
     goto quick_edge_init_end;
-
+  
+  gl_eee = eee;
   rv = run_edge_loop(eee, keep_on_running);
+  gl_eee = NULL;
   edge_term(eee);
 
 quick_edge_init_end:

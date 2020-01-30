@@ -19,6 +19,7 @@ limitations under the License.
 
 #include "sock.h"
 #include "mem.h"
+#include "debug.h"
 
 #define SOCK_BUF_LEN 102400
 #define GET_GATEWAY_CMD "route | grep 'default' | awk '{print $8}'"
@@ -90,7 +91,7 @@ int sock_add_poll(struct pollfd* _poll, int max, sock_t* sock)
 	int i, found = 0;
 	for(i = curfd; i < max; i++)
 	{
-		if(_poll[i].fd == -1)
+		if(_poll[i].fd == INVALID_SOCKET)
 		{
 			_poll[i].fd = sock->fd;
 			sock->poll_i = i;
@@ -104,7 +105,7 @@ int sock_add_poll(struct pollfd* _poll, int max, sock_t* sock)
 	{
 		for(i = max - 1; i >= 0; i--)
 		{
-			if(_poll[i].fd != -1)
+			if(_poll[i].fd != INVALID_SOCKET)
 			{
 				curfd = i;
 				break;
@@ -125,16 +126,23 @@ int sock_del_poll(struct pollfd* _poll, int max, sock_t* sock)
 	int i;
 
 	memset(&_poll[sock->poll_i], 0, sizeof(_poll[sock->poll_i]));
-	_poll[sock->poll_i].fd = -1;
+	_poll[sock->poll_i].fd = INVALID_SOCKET;
 
 	for(i = max; i >= 0; i--)
 	{
-		if(_poll[i].fd != -1)
+		if(_poll[i].fd != INVALID_SOCKET)
 		{
 			curfd = i;
 			break;
 		}
 	}
+
+	CYM_LOG(LV_FATAL, "poll fd:");
+	for (i = 0; i < curfd; i++)
+	{
+		CYM_LOG(LV_FATAL, "[%d]:%d ", i, _poll[i].fd);
+	}
+	CYM_LOG(LV_FATAL, "\n");
 
 	return curfd;
 }
@@ -241,19 +249,22 @@ int create_udp(sock_t *sock, __u32 ip, __u16 port)
 	{
 		perror("bind:");
 		close(sock->fd);
-		sock->fd = -1;
+		sock->fd = INVALID_SOCKET;
 		return -1;
 	}
 
-	printf("bind %s:%d ok\n", IpToStr(ip), ntohs(port));
+	CYM_LOG(LV_FATAL, "bind %s:%d, fd [%d] ok\n", IpToStr(ip), ntohs(port), sock->fd);
 
 	return sock->fd;
 }
 
 void close_sock(sock_t *sock)
 {
-	if(sock->fd > 0)
+	if (sock->fd > 0)
+	{
 		close(sock->fd);
+		CYM_LOG(LV_FATAL, "close fd = %d\n", sock->fd);
+	}
 
 	if(sock->recv_buf)
 	{
@@ -268,7 +279,7 @@ void close_sock(sock_t *sock)
 	}
 
 	memset(sock, 0, sizeof(sock_t));
-	sock->fd = -1;
+	sock->fd = INVALID_SOCKET;
 }
 
 

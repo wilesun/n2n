@@ -102,6 +102,7 @@
     <ClCompile Include="..\..\infiltrate\client\main.c" />
     <ClCompile Include="..\..\infiltrate\client\work.c" />
     <ClCompile Include="..\..\infiltrate\common\cJSON.c" />
+    <ClCompile Include="..\..\infiltrate\common\debug.c" />
     <ClCompile Include="..\..\infiltrate\common\sock.c" />
     <ClCompile Include="..\..\infiltrate\common\timer.c" />
     <ClCompile Include="..\..\minilzo.c" />

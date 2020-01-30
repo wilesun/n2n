@@ -211,7 +211,6 @@ int cli_send_proxy_ack(infp_cli_t* cli, infp_cli_t* dst, sock_t *sock, int ret, 
 
 int cli_send_proxy_task(infp_cli_t* cli, sock_t *sock, infp_cli_t* dst, int mode)
 {
-	const int offset = 3;
 	char send_buf[1024];
 	int len = snprintf(send_buf, sizeof(send_buf)
 					,"{\"cmd\":\"proxy_task\",\"dst_ip\":\"%s\",\"guess_port\":\"%d\""
@@ -219,7 +218,7 @@ int cli_send_proxy_task(infp_cli_t* cli, sock_t *sock, infp_cli_t* dst, int mode
 					, IpToStr(dst->nat_ip)
 					, dst->guess_port
 					, mode
-					, offset
+					, GUESE_PORT_MAX
 					);
 
 	return infp_server_send(cli, sock, send_buf, len);

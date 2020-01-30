@@ -37,6 +37,7 @@ static inline struct hlist_head* inf_proxy_get_hash_head(char *str)
 	return &gl_cli_infp.proxy_hash[(SDBMHash(str) & INFP_HASH_MASK)];
 }
 
+void edge_p2p_fd_close(char *macstr);
 void inf_proxy_del_cli(inf_proxy_t* del)
 {
 	if(del)
@@ -45,8 +46,10 @@ void inf_proxy_del_cli(inf_proxy_t* del)
 
 		if(del->fd > 0)
 		{
+			edge_p2p_fd_close(del->name);
 			close(del->fd);
-			del->fd = -1;
+			CYM_LOG(LV_FATAL, "close fd 2 = %d\n", del->fd);
+			del->fd = INVALID_SOCKET;
 		}
 		list_del(&del->list_to);
 		hlist_del(&del->hash_to);
@@ -63,7 +66,7 @@ inf_proxy_t *inf_proxy_create_cli(char *str)
 		hlist_add_head(&temp->hash_to, inf_proxy_get_hash_head(str));
 
 		snprintf(temp->name, sizeof(temp->name), "%s", str);
-		temp->fd = -1;
+		temp->fd = INVALID_SOCKET;
 	}
 
 	return temp;
@@ -136,7 +139,7 @@ void inf_get_fds(int* fds, int* fd_num)
 	int i = 0;
 
 	fds[fd_nums++] = gl_cli_infp.main_sock.fd;
-	for(i = 0; i < 3; i++)
+	for(i = 0; i < GUESE_PORT_MAX; i++)
 	{
 		if(gl_cli_infp.proxy_sock[i].fd > 0)
 			fds[fd_nums++] = gl_cli_infp.proxy_sock[i].fd;
@@ -316,7 +319,7 @@ int cli_infp_get_nat_port(sock_t* sock, cli_infp_t* infp, char* dst_ip, char* ds
 	int i = 0;
 	__u16 port = 0;
 
-	for(i = 0; i < 3; i++)
+	for(i = 0; i < GUESE_PORT_MAX; i++)
 	{
 		if(gl_cli_infp.proxy_sock[i].fd > 0)
 		{
@@ -333,7 +336,7 @@ try_bind:
 	}
 
 	port = (rand() % 35535) + 12000;
-	for(i = 0; i < 3; i++)
+	for(i = 0; i < GUESE_PORT_MAX; i++)
 	{
 		gl_cli_infp.proxy_port[i] = port + i;
 		if(create_udp(&gl_cli_infp.proxy_sock[i], 0, htons(gl_cli_infp.proxy_port[i])) < 0)
@@ -412,7 +415,7 @@ int cli_infp_do_stun_hello(cli_infp_t* infp, int offset, int mode, __u32 ip, __u
 
 	if(mode)
 	{
-		for(i = 0; i < offset; i++)
+		for(i = 0; i < offset > GUESE_PORT_MAX ? GUESE_PORT_MAX : offset; i++)
 		{
 			cli_infp_send_stun_hello(&infp->proxy_sock[0], infp, ip, htons(port+i));
 		}
@@ -425,13 +428,13 @@ int cli_infp_do_stun_hello(cli_infp_t* infp, int offset, int mode, __u32 ip, __u
 	}
 	else
 	{
-		for(i = 0; i < offset; i++)
+		for(i = 0; i < offset > GUESE_PORT_MAX ? GUESE_PORT_MAX : offset; i++)
 		{
 			printf("sendto %s:%d\n", IpToStr(ip), port);
 			cli_infp_send_stun_hello(&infp->proxy_sock[i], infp, ip, htons(port));
 		}
 
-		for(i = 0; i < offset; i++)
+		for(i = 0; i < offset > GUESE_PORT_MAX ? GUESE_PORT_MAX : offset; i++)
 		{
 			curfds = sock_add_poll(poll_arr, INFP_POLL_MAX, &infp->proxy_sock[i]);
 			if(curfds < 0)
@@ -568,7 +571,7 @@ int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr)
 				char name[32];
 				snprintf(name, sizeof(name), "%s", json_value->valuestring);
 				proxy = inf_proxy_find_cli(name);
-				if(proxy && proxy->fd != sock->fd)
+				if(proxy && proxy->fd > 0 && proxy->fd != sock->fd)
 				{
 					inf_proxy_del_cli(proxy);
 					proxy = NULL;
@@ -581,16 +584,17 @@ int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr)
 				{
 					memcpy(&proxy->addr, addr, sizeof(proxy->addr));
 					proxy->fd = sock->fd;	// fd 交给proxy接管
+					CYM_LOG(LV_FATAL, "p2p fd = %d\n", proxy->fd);
+					sock_del_poll(poll_arr, INFP_POLL_MAX, sock);
+					sock->fd = INVALID_SOCKET;
 					proxy->uptime = jiffies;
 				}
 
-				for(i = 0; i < 3; i++)
+				for(i = 0; i < GUESE_PORT_MAX; i++)
 				{
 					if(gl_cli_infp.proxy_sock[i].fd > 0)
 					{
 						sock_del_poll(poll_arr, INFP_POLL_MAX, &gl_cli_infp.proxy_sock[i]);
-						if(gl_cli_infp.proxy_sock[i].fd == proxy->fd)
-							gl_cli_infp.proxy_sock[i].fd = -1;
 						close_sock(&gl_cli_infp.proxy_sock[i]);
 					}
 				}
@@ -606,6 +610,8 @@ int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr)
 
 	memset(sock->recv_buf, 0, sock->recv_buf_len);
 	sock->recv_len = 0;
+	if(sock->fd == INVALID_SOCKET)
+		close_sock(sock);
 	return ret;
 }
 
@@ -647,7 +653,7 @@ int inf_proxy_check_send(void* p_mac, void* p_addr, int* fd)
 		}
 		else if(jiffies - proxy->uptime < 3 * HZ)
 		{
-			return -1;
+			return INVALID_SOCKET;
 		}
 	}
 
