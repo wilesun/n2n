@@ -65,8 +65,10 @@ inf_proxy_t *inf_proxy_create_cli(char *str)
 		list_add_tail(&temp->list_to, &gl_cli_infp.proxy_list);
 		hlist_add_head(&temp->hash_to, inf_proxy_get_hash_head(str));
 
+		CYM_LOG(LV_FATAL, "create [%s]\n", str);
 		snprintf(temp->name, sizeof(temp->name), "%s", str);
 		temp->fd = INVALID_SOCKET;
+		temp->uptime = jiffies;	// 创建的时候赋值
 	}
 
 	return temp;
@@ -106,9 +108,15 @@ void cli_infp_check_proxy_list(void)
 	list_for_each_safe(pos, n, &gl_cli_infp.proxy_list)
 	{
 		temp = list_entry(pos, inf_proxy_t, list_to);
-		if(jiffies - temp->uptime > 60 * HZ)
+		if(jiffies - temp->uptime > 5 * HZ)
 		{
 			inf_proxy_del_cli(temp);
+		}
+		else
+		{
+			sock_t sock;
+			sock.fd = temp->fd;
+			cli_infp_send_stun_hello(&sock, &gl_cli_infp, temp->addr.sin_addr.s_addr, temp->addr.sin_port);
 		}
 	}
 }
@@ -323,6 +331,7 @@ int cli_infp_get_nat_port(sock_t* sock, cli_infp_t* infp, char* dst_ip, char* ds
 	{
 		if(gl_cli_infp.proxy_sock[i].fd > 0)
 		{
+			sock_del_poll(poll_arr, INFP_POLL_MAX, &gl_cli_infp.proxy_sock[i]);
 			close_sock(&gl_cli_infp.proxy_sock[i]);
 		}
 	}
@@ -373,10 +382,22 @@ int cli_infp_do_proxy_ack(cJSON* root, struct sockaddr_in *addr, sock_t *sock)
 	}
 	snprintf(dst_name, sizeof(dst_name), "%s", j_value->valuestring);
 
-	// 防止已打通的连接重复打洞 (此处只刷新,外部调用时判断)
-	proxy = inf_proxy_find_create_cli(dst_name);
-	if(proxy->fd < 0)
-		proxy->uptime = jiffies;
+	proxy = inf_proxy_find_cli(dst_name);
+	if (proxy)
+	{
+		if (proxy->inited)
+		{
+			// 刚创建2秒内不让重连
+			if(jiffies - proxy->uptime < 2 * HZ)
+				return 0;
+		}
+
+		proxy->inited = 1;
+	}
+	else
+	{
+		inf_proxy_find_create_cli(dst_name);
+	}
 
 FUNC_OUT:
 	return cli_infp_get_nat_port(sock, &gl_cli_infp, dst_ip, dst_name);
@@ -552,12 +573,63 @@ int cli_infp_recv_do(sock_t *sock, struct sockaddr_in *addr)
 	return ret;
 }
 
+void edge_try_decode_mac(__u8 *buf, __u32 recv_len, char *name);
+int cli_infp_check_ping(__u8 *buf, __u32 recv_len, struct sockaddr_in *addr)
+{
+	cJSON* root = NULL;
+	__u32 now = 0;
+	int ping = 0;
+	memxor(buf, recv_len);
+	root = cJSON_Parse(buf);
+	if (root)
+	{
+		inf_proxy_t *proxy = NULL;
+		char name[32] = { 0 };
+		cJSON* json_value = cJSON_GetObjectItem(root, "name");
+		if (json_value && json_value->valuestring)
+		{
+			snprintf(name, sizeof(name), "%s", json_value->valuestring);
+		}
+		cJSON_Delete(root);
+
+		proxy = inf_proxy_find_cli(name);
+		// 不存在->垃圾包
+		if (!proxy)
+		{
+			CYM_LOG(LV_FATAL, "check ping proxy recv do not found [%s]", name);
+			return 1;
+		}
+
+		now = jiffies;
+		if (now > proxy->uptime + HZ)
+			ping = now - proxy->uptime - HZ;
+		else
+			ping = 1;
+
+		if(ping)
+			CYM_LOG(LV_FATAL, "%s ping %lu ms\n", IpToStr(proxy->addr.sin_addr.s_addr), ping);
+		proxy->uptime = now;
+		if (memcmp(&proxy->addr, addr, sizeof(proxy->addr)))
+		{
+			CYM_LOG(LV_FATAL, "%s:%d changed->", IpToStr(proxy->addr.sin_addr.s_addr), ntohs(proxy->addr.sin_port));
+			memcpy(&proxy->addr, addr, sizeof(proxy->addr));
+			CYM_LOG(LV_FATAL, "%s:%d\n", IpToStr(proxy->addr.sin_addr.s_addr), ntohs(proxy->addr.sin_port));
+		}
+		return 1;
+	}
+
+	return 0;
+}
+
 int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr)
 {
 	int ret = -1;
 
 	if(sock->recv_buf && sock->recv_len)
 	{
+		inf_proxy_t *proxy = NULL;
+		int i = 0;
+		char name[32] = {0};
 		memxor(sock->recv_buf, sock->recv_len);
 		CYM_LOG(LV_DEBUG, "recv [%s]\n", sock->recv_buf);
 		cJSON* root = cJSON_Parse(sock->recv_buf);
@@ -566,52 +638,58 @@ int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr)
 			cJSON* json_value = cJSON_GetObjectItem(root, "name");
 			if(json_value && json_value->valuestring)
 			{
-				inf_proxy_t *proxy = NULL;
-				int i = 0;
-				char name[32];
 				snprintf(name, sizeof(name), "%s", json_value->valuestring);
-				proxy = inf_proxy_find_cli(name);
-				if(proxy && proxy->fd > 0 && proxy->fd != sock->fd)
-				{
-					inf_proxy_del_cli(proxy);
-					proxy = NULL;
-				}
-
-				if(!proxy)
-					proxy = inf_proxy_find_create_cli(name);
-
-				if(proxy)
-				{
-					memcpy(&proxy->addr, addr, sizeof(proxy->addr));
-					proxy->fd = sock->fd;	// fd 交给proxy接管
-					CYM_LOG(LV_FATAL, "p2p fd = %d\n", proxy->fd);
-					sock_del_poll(poll_arr, INFP_POLL_MAX, sock);
-					sock->fd = INVALID_SOCKET;
-					proxy->uptime = jiffies;
-				}
-
-				for(i = 0; i < GUESE_PORT_MAX; i++)
-				{
-					if(gl_cli_infp.proxy_sock[i].fd > 0)
-					{
-						sock_del_poll(poll_arr, INFP_POLL_MAX, &gl_cli_infp.proxy_sock[i]);
-						close_sock(&gl_cli_infp.proxy_sock[i]);
-					}
-				}
 			}
 			cJSON_Delete(root);
 		}
 		else
 		{
-			CYM_LOG(LV_WARNING, "json parse error, data:\n%s\n", sock->recv_buf);
+			CYM_LOG(LV_WARNING, "json parse error\n");
+			// 还原一下
+			memxor(sock->recv_buf, sock->recv_len);
+			CYM_LOG(LV_FATAL, "sock->recv_buf = %02X %02X %02X %02X\n"
+				, sock->recv_buf[0], sock->recv_buf[1], sock->recv_buf[2], sock->recv_buf[3]);
+			edge_try_decode_mac(sock->recv_buf, sock->recv_len, name);
 		}
 		
+		if (name[0] == 0)
+			goto next;
+
+		proxy = inf_proxy_find_cli(name);
+		// 不存在->垃圾包
+		if (!proxy)
+		{
+			CYM_LOG(LV_FATAL, "proxy recv do not found [%s]", name);
+			goto next;
+		}
+
+		if (proxy)
+		{
+			memcpy(&proxy->addr, addr, sizeof(proxy->addr));
+			proxy->fd = sock->fd;	// fd 交给proxy接管
+			CYM_LOG(LV_FATAL, "p2p fd = %d, poll_i = %d\n", proxy->fd, sock->poll_i);
+			sock_del_poll(poll_arr, INFP_POLL_MAX, sock);
+			sock->fd = INVALID_SOCKET;
+			proxy->uptime = jiffies;
+		}
+
+		for (i = 0; i < GUESE_PORT_MAX; i++)
+		{
+			if (gl_cli_infp.proxy_sock[i].fd > 0)
+			{
+				sock_del_poll(poll_arr, INFP_POLL_MAX, &gl_cli_infp.proxy_sock[i]);
+				close_sock(&gl_cli_infp.proxy_sock[i]);
+			}
+		}
 	}
 
+next:
 	memset(sock->recv_buf, 0, sock->recv_buf_len);
 	sock->recv_len = 0;
 	if(sock->fd == INVALID_SOCKET)
 		close_sock(sock);
+
+	ret = 0;
 	return ret;
 }
 
@@ -628,6 +706,44 @@ typedef struct n2n_sock
     } addr;
 } n2n_sock_t;
 
+int inf_proxy_check_exist(void* p_mac, void* p_addr, int* fd, void* real_addr)
+{
+	inf_proxy_t* proxy = NULL;
+	char mac_str[32];
+	__u8 *mac = p_mac;
+	n2n_sock_t* addr = p_addr;
+
+	snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+		mac[0] & 0xFF, mac[1] & 0xFF, mac[2] & 0xFF,
+		mac[3] & 0xFF, mac[4] & 0xFF, mac[5] & 0xFF);
+
+	proxy = inf_proxy_find_cli(mac_str);
+	if (proxy)
+	{
+		//CYM_LOG(LV_FATAL, "found proxy [%s] fd = %d uptime = %d\n", mac_str, proxy->fd, jiffies - proxy->uptime);
+		if (proxy->fd > 0)
+		{
+			if (real_addr)
+			{
+				proxy->addr.sin_family = addr->family;
+				proxy->addr.sin_port = htons(addr->port);
+				memcpy(&proxy->addr.sin_addr.s_addr, addr->addr.v4, sizeof(proxy->addr.sin_addr.s_addr));
+			}
+			addr->family = (__u8)proxy->addr.sin_family;
+			addr->port = ntohs(proxy->addr.sin_port);
+			memcpy(addr->addr.v4, &proxy->addr.sin_addr.s_addr, sizeof(addr->addr.v4));
+			*fd = proxy->fd;
+			return 1;
+		}
+	}
+	else
+	{
+		//CYM_LOG(LV_FATAL, "not found proxy [%s]\n", mac_str);
+	}
+
+	return 0;
+}
+
 int inf_proxy_check_send(void* p_mac, void* p_addr, int* fd)
 {
 	inf_proxy_t* proxy = NULL;
@@ -640,18 +756,18 @@ int inf_proxy_check_send(void* p_mac, void* p_addr, int* fd)
 	   mac[3] & 0xFF, mac[4] & 0xFF, mac[5] & 0xFF);
 
 	proxy = inf_proxy_find_cli(mac_str);
-	// 3秒尝试一次打洞
+	// 离线后(30秒)才进行下次尝试
 	if(proxy)
 	{
 		if(proxy->fd > 0)
 		{
 			addr->family = (__u8)proxy->addr.sin_family;
-			addr->port = proxy->addr.sin_port;
+			addr->port = ntohs(proxy->addr.sin_port);
 			memcpy(addr->addr.v4, &proxy->addr.sin_addr.s_addr, sizeof(addr->addr.v4));
 			*fd = proxy->fd;
 			return 1;
 		}
-		else if(jiffies - proxy->uptime < 3 * HZ)
+		else
 		{
 			return INVALID_SOCKET;
 		}
@@ -660,8 +776,6 @@ int inf_proxy_check_send(void* p_mac, void* p_addr, int* fd)
 	if(!proxy)
 		proxy = inf_proxy_find_create_cli(mac_str);
 
-	if(proxy)
-		proxy->uptime = jiffies;
 	cli_infp_send_proxy_request(&gl_cli_infp.main_sock, &gl_cli_infp, "0.0.0.0", mac_str);
 	return 0;
 }

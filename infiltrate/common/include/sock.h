@@ -51,7 +51,7 @@ typedef struct sock_s
 	int poll_i;
 	__u32 uptime;		// 最后一次有收包/发包时间 jiffies
 
-	char* recv_buf;		// 接收缓存
+	__u8* recv_buf;		// 接收缓存
 	int recv_buf_len;	// 接收缓存总大小
 	int recv_len;		// 当前已接收数据大小
 

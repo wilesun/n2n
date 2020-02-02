@@ -114,10 +114,10 @@ int sock_add_poll(struct pollfd* _poll, int max, sock_t* sock)
 	}
 	else
 	{
-		printf("poll is full\n");
+		CYM_LOG(LV_FATAL, "poll is full\n");
 	}
 
-	return found ? curfd+1 : -1;
+	return curfd+1;
 }
 
 int sock_del_poll(struct pollfd* _poll, int max, sock_t* sock)
@@ -125,10 +125,17 @@ int sock_del_poll(struct pollfd* _poll, int max, sock_t* sock)
 	int curfd = 0;
 	int i;
 
-	memset(&_poll[sock->poll_i], 0, sizeof(_poll[sock->poll_i]));
-	_poll[sock->poll_i].fd = INVALID_SOCKET;
+	if (sock->poll_i <= 0)
+	{
+		CYM_LOG(LV_FATAL, "fd [%d], poll_i [%d] invaild\n", sock->fd, sock->poll_i);
+	}
+	else
+	{
+		memset(&_poll[sock->poll_i], 0, sizeof(_poll[sock->poll_i]));
+		_poll[sock->poll_i].fd = INVALID_SOCKET;
+	}
 
-	for(i = max; i >= 0; i--)
+	for(i = max - 1; i >= 0; i--)
 	{
 		if(_poll[i].fd != INVALID_SOCKET)
 		{
@@ -138,13 +145,13 @@ int sock_del_poll(struct pollfd* _poll, int max, sock_t* sock)
 	}
 
 	CYM_LOG(LV_FATAL, "poll fd:");
-	for (i = 0; i < curfd; i++)
+	for (i = 0; i < curfd+1; i++)
 	{
 		CYM_LOG(LV_FATAL, "[%d]:%d ", i, _poll[i].fd);
 	}
 	CYM_LOG(LV_FATAL, "\n");
 
-	return curfd;
+	return curfd + 1;
 }
 
 // IP ÍøÂçÐò, PORT ÍøÂçÐò

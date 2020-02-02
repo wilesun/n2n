@@ -56,25 +56,25 @@ void infp_timeout(unsigned long data)
 		if(jiffies > infp->next_hb)
 		{
 			cli_infp_send_heart(&infp->main_sock, infp);
-			infp->next_login = jiffies + 60 * HZ;
-			infp->state = CLI_INFP_INIT;// 60秒未收到心跳则重新登录
+			infp->next_login = jiffies + 10 * HZ;
+			infp->state = CLI_INFP_INIT;// 10秒未收到心跳回应则重新登录
 		}
 		break;
 	default:
 		CYM_LOG(LV_ERROR, "???\n");
 	}
 
-	CYM_LOG(LV_FATAL, "jiffies = %lu\n", jiffies);
+	//CYM_LOG(LV_FATAL, "jiffies = %lu\n", jiffies);
 
 	if(!list_empty(&infp->proxy_list))
 	{
 		cli_infp_check_proxy_list();
 	}
 
-	CYM_LOG(LV_FATAL, "check proxy done\n");
+	//CYM_LOG(LV_FATAL, "check proxy done\n");
 
 	// 5秒进来一次算了
-	mod_timer(&gl_cli_infp.timer, jiffies + 5*HZ);
+	mod_timer(&gl_cli_infp.timer, jiffies + HZ);
 }
 
 int infp_init(const char *server_addr, __u8 *device_mac)

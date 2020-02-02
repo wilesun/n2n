@@ -38,7 +38,7 @@ typedef struct inf_proxy_s
 	struct sockaddr_in addr;// 对端公网地址
 	int  fd;			// 本地与对端通信用fd
 	__u32 uptime;		// 最后收到对方数据包时间 jiffies -> 暂定60秒超时, 销毁该隧道
-	__u32 connected;	// 是否已连接
+	__u32 inited;		// 是否已尝试打洞
 
 	struct list_head list_to; // 关联 cli_infp_t->proxy_list
 	struct hlist_node hash_to; // 关联 cli_infp_t->proxy_hash

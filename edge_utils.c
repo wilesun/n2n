@@ -275,14 +275,26 @@ edge_init_error:
 }
 
 /* ************************************** */
-
-static int find_and_remove_peer(struct peer_info **head, const n2n_mac_t mac) {
+static void peer_set_p2p_confirmed(n2n_edge_t * eee,
+	const n2n_mac_t mac,
+	const n2n_sock_t * peer,
+	time_t now);
+static int find_and_remove_or_confirm_peer(n2n_edge_t *eee, const n2n_mac_t mac, n2n_sock_t* real_sender) {
   struct peer_info *peer;
 
-  HASH_FIND_PEER(*head, mac, peer);
+  HASH_FIND_PEER(eee->pending_peers, mac, peer);
   if(peer) {
-    HASH_DEL(*head, peer);
-    free(peer);
+	  int fd = -1;
+	  if (inf_proxy_check_exist((void*)mac, (void*)&(peer->sock), &fd, (void*)real_sender) > 0)
+	  {
+		  peer->p2p_fd = fd;
+		  peer_set_p2p_confirmed(eee, mac, &peer->sock, time(NULL));
+	  }
+	  else
+	  {
+		  HASH_DEL(eee->pending_peers, peer);
+		  free(peer);
+	  }
     return(1);
   }
 
@@ -464,25 +476,43 @@ static void register_with_new_peer(n2n_edge_t * eee,
 #endif
       } else { /* eee->conf.register_ttl <= 0 */
         /* Normal STUN */
-        send_register(eee, &(scan->sock), mac, scan->p2p_fd);
+		  int fd = -1;
+		  if (inf_proxy_check_exist((void*)mac, (void*)&(scan->sock), &fd, NULL))
+		  {
+			  CYM_LOG(LV_FATAL, "send sn p2p register\n");
+			  scan->p2p_fd = fd;
+		  }
+
+		  send_register(eee, &(scan->sock), mac, scan->p2p_fd);
       }
-      send_register(eee, &(eee->supernode), mac, scan->p2p_fd);
+      send_register(eee, &(eee->supernode), mac, -1);
     } else {
       /* P2P register, send directly */
+		int fd = -1;
+		if (inf_proxy_check_exist((void*)mac, (void*)&(scan->sock), &fd, (void*)&(scan->sock)))
+		{
+			CYM_LOG(LV_FATAL, "send p2p register\n");
+			scan->p2p_fd = fd;
+		}
+
       send_register(eee, &(scan->sock), mac, scan->p2p_fd);
     }
 
     register_with_local_peers(eee);
   }
-  else if(now - scan->last_seen > 2 && scan->p2p_try < 10)
+  else if(
+	  (now - scan->last_seen) > (rand() % 3 )
+	  && scan->p2p_try < 10
+	  )
   {
     // -1 failed, 0: send proxy, 1: proxy ok
     int fd = INVALID_SOCKET;
     int ret = inf_proxy_check_send((void*)mac, (void*)&(scan->sock), &fd);
     if(ret > 0)
     {
+		n2n_sock_str_t sockbuf;
        scan->p2p_fd = fd;
-	   CYM_LOG(LV_FATAL, "send proxy p2p fd = %d\n", fd);
+	   CYM_LOG(LV_FATAL, "send proxy p2p fd = %d addr: %s\n", fd, sock_to_cstr(sockbuf, &(scan->sock)));
        send_register(eee, &(scan->sock), mac, scan->p2p_fd);
     }
     else if(ret == 0)
@@ -491,12 +521,14 @@ static void register_with_new_peer(n2n_edge_t * eee,
     }
     else
     {
-       scan->sock = *peer;
+		if(!from_supernode || scan->p2p_fd <= 0)
+			scan->sock = *peer;
     }
   }
   else
   {
-    scan->sock = *peer;
+	  if (!from_supernode || scan->p2p_fd <= 0)
+		  scan->sock = *peer;
   }
 }
 
@@ -1455,6 +1487,43 @@ static HANDLE startTunReadThread(struct tunread_arg *arg) {
 }
 #endif
 
+void edge_try_decode_mac(__u8 *buf, __u32 recv_len, char *name)
+{
+	n2n_common_t        cmn; /* common fields in the packet header */
+	size_t              rem = recv_len;
+	size_t              idx = 0;
+
+	if (decode_common(&cmn, buf, &rem, &idx) < 0)
+	{
+		traceEvent(TRACE_ERROR, "Failed to decode common section in N2N_UDP");
+		return; /* failed to decode packet */
+	}
+
+	switch (cmn.pc)
+	{
+		case MSG_TYPE_REGISTER:
+		{
+			/* Another edge is registering with us */
+			n2n_REGISTER_t reg;
+
+			decode_REGISTER(&reg, &cmn, buf, &rem, &idx);
+
+			macaddr_str(name, reg.srcMac);
+			break;
+		}
+		case MSG_TYPE_REGISTER_ACK:
+		{
+			/* Peer edge is acknowledging our register request */
+			n2n_REGISTER_ACK_t ra;
+
+			decode_REGISTER_ACK(&ra, &cmn, buf, &rem, &idx);
+
+			macaddr_str(name, ra.srcMac);
+			break;
+		}
+	}
+}
+
 /* ************************************** */
 
 /** Read a datagram from the main UDP socket to the internet. */
@@ -1516,7 +1585,9 @@ static void readFromIPSocket(n2n_edge_t * eee, int in_sock) {
   idx = 0; /* marches through packet header as parts are decoded. */
   if(decode_common(&cmn, udp_buf, &rem, &idx) < 0)
     {
-      traceEvent(TRACE_ERROR, "Failed to decode common section in N2N_UDP");
+	  if(!cli_infp_check_ping(udp_buf, recvlen, &sender_sock))
+		traceEvent(TRACE_ERROR, "Failed to decode common section in N2N_UDP");
+	  
       return; /* failed to decode packet */
     }
 
@@ -1544,7 +1615,7 @@ static void readFromIPSocket(n2n_edge_t * eee, int in_sock) {
 	     * handle_PACKET to double check this.
 	     */
 	    traceEvent(TRACE_DEBUG, "Got P2P packet");
-	    find_and_remove_peer(&eee->pending_peers, pkt.srcMac);
+		find_and_remove_or_confirm_peer(eee, pkt.srcMac, orig_sender);
 	  }
 
 	  traceEvent(TRACE_INFO, "Rx PACKET from %s (sender=%s) [%u B]",
@@ -1586,7 +1657,7 @@ static void readFromIPSocket(n2n_edge_t * eee, int in_sock) {
 	     * to double check this.
 	     */
 	    traceEvent(TRACE_DEBUG, "Got P2P register");
-	    find_and_remove_peer(&eee->pending_peers, reg.srcMac);
+		find_and_remove_or_confirm_peer(eee, reg.srcMac, orig_sender);
 
 	    /* NOTE: only ACK to peers */
 	    send_register_ack(eee, orig_sender, &reg, in_sock);
@@ -1597,7 +1668,7 @@ static void readFromIPSocket(n2n_edge_t * eee, int in_sock) {
 		     macaddr_str(mac_buf2, reg.dstMac),
 		     sock_to_cstr(sockbuf1, &sender),
 		     sock_to_cstr(sockbuf2, orig_sender));
-
+	  CYM_LOG(LV_FATAL, "recv register\n");
 	  check_peer_registration_needed(eee, from_supernode, reg.srcMac, orig_sender);
 	  break;
       }
@@ -1617,7 +1688,8 @@ static void readFromIPSocket(n2n_edge_t * eee, int in_sock) {
 		     sock_to_cstr(sockbuf1, &sender),
 		     sock_to_cstr(sockbuf2, orig_sender));
 
-	  peer_set_p2p_confirmed(eee, ra.srcMac, &sender, now);
+	  if(!from_supernode)
+		peer_set_p2p_confirmed(eee, ra.srcMac, &sender, now);
 	  break;
       }
       case MSG_TYPE_REGISTER_SUPER_ACK:
@@ -1677,7 +1749,8 @@ static void readFromIPSocket(n2n_edge_t * eee, int in_sock) {
 
 	HASH_FIND_PEER(eee->pending_peers, pi.mac, scan);
         if (scan) {
-            scan->sock = pi.sock;
+			if(scan->p2p_fd <= 0)
+				scan->sock = pi.sock;
             traceEvent(TRACE_INFO, "Rx PEER_INFO for %s: is at %s",
                        macaddr_str(mac_buf1, pi.mac),
                        sock_to_cstr(sockbuf1, &pi.sock));
@@ -1790,8 +1863,8 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
     max_sock = edge_fd_set_proxy(max_sock, &socket_mask, proxy_fds, &proxy_fd_num);
     max_sock = edge_fd_set_inf(max_sock, &socket_mask, inf_fds, &inf_fd_num);
 
-    wait_time.tv_sec = 10;
-    wait_time.tv_usec = 0;
+    wait_time.tv_sec = 0;
+    wait_time.tv_usec = 50;
 
     rc = select(max_sock+1, &socket_mask, NULL, NULL, &wait_time);
     nowTime=time(NULL);
@@ -1816,7 +1889,7 @@ int run_edge_loop(n2n_edge_t * eee, int *keep_running) {
 		  if(FD_ISSET(proxy_fds[i], &socket_mask)) {
 		/* Read a cooked socket from the internet socket (unicast). Writes on the TAP
 		 * socket. */
-		//	CYM_LOG(LV_FATAL, "fd [%d] isset\n", proxy_fds[i]);
+		//CYM_LOG(LV_FATAL, "fd [%d] isset\n", proxy_fds[i]);
 		readFromIPSocket(eee, proxy_fds[i]);
 	      }
 	  }
