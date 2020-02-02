@@ -401,11 +401,16 @@ void infp_guess_port(infp_cli_t *cli)
 		// TODO: 除了等差数列, 还要支持别的
 		int temp = (int)((int)cli->guess[1].nat_port - (int)cli->guess[0].nat_port);
 		cli->guess_port = cli->guess[1].nat_port + (temp * 2);	// TODO: optmize
-		CYM_LOG(LV_INFO, "0: %d, 1: %d, guess: %d\n"
-			, cli->guess[0].nat_port, cli->guess[1].nat_port, cli->guess_port);
+		CYM_LOG(LV_INFO, "0:%d->%d, 1:%d->%d, guess: %d\n"
+			, cli->guess[0].src_port, cli->guess[0].nat_port
+			, cli->guess[1].src_port, cli->guess[1].nat_port
+			, cli->guess_port);
 	}
 	else
 	{
+		CYM_LOG(LV_INFO, "0:%d->%d, 1:%d->%d, do not guess\n"
+			, cli->guess[0].src_port, cli->guess[0].nat_port
+			, cli->guess[1].src_port, cli->guess[1].nat_port);
 		cli->guess_port = cli->guess[0].nat_port;
 	}
 }
