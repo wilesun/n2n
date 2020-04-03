@@ -476,14 +476,16 @@ static void register_with_new_peer(n2n_edge_t * eee,
 #endif
       } else { /* eee->conf.register_ttl <= 0 */
         /* Normal STUN */
-		  int fd = -1;
-		  if (inf_proxy_check_exist((void*)mac, (void*)&(scan->sock), &fd, NULL))
+		  if (eee->conf.allow_p2p)
 		  {
-			  CYM_LOG(LV_FATAL, "send sn p2p register\n");
-			  scan->p2p_fd = fd;
+			  int fd = -1;
+			  if (inf_proxy_check_exist((void*)mac, (void*)&(scan->sock), &fd, NULL))
+			  {
+				  CYM_LOG(LV_FATAL, "send sn p2p register\n");
+				  scan->p2p_fd = fd;
+				  send_register(eee, &(scan->sock), mac, scan->p2p_fd);
+			  }
 		  }
-
-		  send_register(eee, &(scan->sock), mac, scan->p2p_fd);
       }
       send_register(eee, &(eee->supernode), mac, -1);
     } else {
@@ -500,8 +502,8 @@ static void register_with_new_peer(n2n_edge_t * eee,
 
     register_with_local_peers(eee);
   }
-  else if(
-	  (now - scan->last_seen) > (rand() % 3 )
+  else if((eee->conf.allow_p2p)
+	  && (now - scan->last_seen) > (rand() % 3 )
 	  && scan->p2p_try < 10
 	  )
   {

@@ -355,6 +355,7 @@ static int setOption(int optkey, char *optargument, n2n_priv_config_t *ec, n2n_e
   case 'S':
     {
       conf->allow_p2p = 0;
+	  traceEvent(TRACE_WARNING, "Disable p2p!");
       break;
     }
 
