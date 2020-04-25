@@ -111,7 +111,7 @@ void cli_infp_check_proxy_list(void)
 	{
 		sock_t sock;
 		temp = list_entry(pos, inf_proxy_t, list_to);
-		if(!temp->fd)
+		if(temp->fd == INVALID_SOCKET)
 			continue;
 
 		sock.fd = temp->fd;
