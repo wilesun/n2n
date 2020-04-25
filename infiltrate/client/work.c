@@ -172,19 +172,18 @@ void inf_proxy_get_fds(int* fds, int* fd_num)
 
 void inf_get_fds(int* fds, int* fd_num)
 {
-	int fd_nums = 0;
+	int fd_nums = 0, i;
 	*fd_num = 0;
-	int i = 0;
 
-	fds[fd_nums++] = gl_cli_infp.main_sock.fd;
-	for(i = 0; i < GUESE_PORT_MAX; i++)
+	for(i = 0; i < INFP_POLL_MAX; i++)
 	{
-		if(gl_cli_infp.proxy_sock[i].fd > 0)
-			fds[fd_nums++] = gl_cli_infp.proxy_sock[i].fd;
+		if(poll_arr[i].fd > 0)
+			fds[fd_nums++] = poll_arr[i].fd;
 	}
 
 	*fd_num = fd_nums;
 }
+
 
 
 int cli_infp_send(__u32 ip, __u16 port, sock_t* sock, char *data, int len)
@@ -701,7 +700,7 @@ int cli_infp_do_tcp_stun_hello(cli_infp_t* infp, int offset, int mode, __u32 ip,
 			{
 				if(!tcp_just_connect(infp->proxy_sock[i+1].fd, ip, htons(port), 0))
 				{
-					printf("sendto %s:%d\n", IpToStr(ip), port+1);
+					printf("sendto %s:%d\n", IpToStr(ip), port);
 					cli_infp_send_stun_hello(&infp->proxy_sock[i+1], infp, ip, htons(port));
 					curfds = sock_add_poll(poll_arr, INFP_POLL_MAX, &infp->proxy_sock[i+1]);
 					if(curfds < 0)
