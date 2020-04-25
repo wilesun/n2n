@@ -1626,7 +1626,8 @@ static void readFromIPSocket(n2n_edge_t * eee, int in_sock) {
 	     * handle_PACKET to double check this.
 	     */
 	    traceEvent(TRACE_DEBUG, "Got P2P packet");
-		find_and_remove_or_confirm_peer(eee, pkt.srcMac, orig_sender);
+		if(is_valid_peer_sock(orig_sender))
+			find_and_remove_or_confirm_peer(eee, pkt.srcMac, orig_sender);
 	  }
 
 	  traceEvent(TRACE_INFO, "Rx PACKET from %s (sender=%s) [%u B]",
