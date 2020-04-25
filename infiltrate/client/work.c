@@ -111,6 +111,9 @@ void cli_infp_check_proxy_list(void)
 	{
 		sock_t sock;
 		temp = list_entry(pos, inf_proxy_t, list_to);
+		if(!temp->fd)
+			continue;
+
 		sock.fd = temp->fd;
 		if (now - temp->uptime > 15 * HZ)
 		{
@@ -1033,7 +1036,6 @@ int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr)
 			goto next;
 
 		proxy = inf_proxy_find_cli(name);
-		// ²»´æÔÚ->À¬»ø°ü
 		if (!proxy)
 		{
 			CYM_LOG(LV_FATAL, "proxy recv do not found [%s]", name);
