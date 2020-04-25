@@ -32,32 +32,43 @@ limitations under the License.
 #include <arpa/inet.h>
 #include <poll.h>
 #include <unistd.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
 #endif
 #include <fcntl.h>
 #include <string.h>
 
-
+#include "timer.h"
+#include "list.h"
 #include "c_type.h"
 
 #ifndef INVALID_SOCKET
 #define INVALID_SOCKET (-1)
 #endif
 
-#define GUESE_PORT_MAX 3
+#define GUESE_PORT_MAX 4
 
 typedef struct sock_s
 {
 	int fd;
 	int poll_i;
-	__u32 uptime;		// ×îºóÒ»´ÎÓĞÊÕ°ü/·¢°üÊ±¼ä jiffies
+	__u32 uptime;		// æœ€åä¸€æ¬¡æœ‰æ”¶åŒ…/å‘åŒ…æ—¶é—´ jiffies
+	__u8 listen;		// ç›‘å¬sock
+	__u8 malloced;		// åŠ¨æ€åˆ›å»º
+	__u16 pad;			//
 
-	__u8* recv_buf;		// ½ÓÊÕ»º´æ
-	int recv_buf_len;	// ½ÓÊÕ»º´æ×Ü´óĞ¡
-	int recv_len;		// µ±Ç°ÒÑ½ÓÊÕÊı¾İ´óĞ¡
+	__u8* recv_buf;		// æ¥æ”¶ç¼“å­˜
+	int recv_buf_len;	// æ¥æ”¶ç¼“å­˜æ€»å¤§å°
+	int recv_len;		// å½“å‰å·²æ¥æ”¶æ•°æ®å¤§å°
 
-	char* send_buf;		// ·¢ËÍ»º´æ
-	int send_buf_len;	// ·¢ËÍ»º´æ×Ü´óĞ¡
-	int send_len;		// µ±Ç°´ı·¢ËÍÊı¾İ´óĞ¡
+	char* send_buf;		// å‘é€ç¼“å­˜
+	int send_buf_len;	// å‘é€ç¼“å­˜æ€»å¤§å°
+	int send_len;		// å½“å‰å¾…å‘é€æ•°æ®å¤§å°
+
+	struct sockaddr_in addr;	// æœ¬åœ°ç›‘å¬çš„addrä¿¡æ¯
+
+	struct hlist_node hash_to;	// fd ä½œä¸ºå”¯ä¸€æ ‡è¯†
+
 }sock_t;
 
 static inline void poll_add_write(struct pollfd* _poll)
@@ -82,7 +93,7 @@ static inline void poll_del_read(struct pollfd* _poll)
 
 static inline int set_sock_block(int fd)
 {
-	//ÉèÖÃÌ×½Ó×Ö×èÈû
+	//???????
 #ifdef WIN32
 	unsigned long ul = 0;
 	int ret = ioctlsocket(fd, FIONBIO, (unsigned long *)&ul);
@@ -99,7 +110,7 @@ static inline int set_sock_block(int fd)
 
 static inline int set_sock_nonblock(int fd)
 {
-	//ÉèÖÃÌ×½Ó×Ö·Ç×èÈû
+	//????????
 #ifdef WIN32
 	unsigned long ul = 1;
 	int ret = ioctlsocket(fd, FIONBIO, (unsigned long *)&ul);
@@ -112,6 +123,32 @@ static inline int set_sock_nonblock(int fd)
 	}
 
 	return ret;
+}
+
+static inline int set_sock_timeout(int fd, int timeout)
+{
+	int ret;
+	struct timeval _timeout;
+	_timeout.tv_sec = (timeout / 1000);
+	_timeout.tv_usec = (timeout % 1000) * HZ;
+	//??????
+	ret = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&_timeout, sizeof(struct timeval));
+	//??????
+	ret = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&_timeout, sizeof(struct timeval));
+
+	return ret;
+}
+
+static inline int set_sock_ttl(int fd, int* ttl)
+{
+	socklen_t len = sizeof(*ttl);
+	return setsockopt(fd, IPPROTO_IP, IP_TTL, (void*)ttl, len);
+}
+
+static inline int get_sock_ttl(int fd, int* ttl)
+{
+	socklen_t len = sizeof(*ttl);
+	return getsockopt(fd, IPPROTO_IP, IP_TTL, (void*)ttl, &len);
 }
 
 static inline __u32 StrToIp(const char *str)
@@ -139,11 +176,18 @@ static inline char* IpToStr(__u32 ip)
 int sock_add_poll(struct pollfd* _poll, int max, sock_t* sock);
 int sock_del_poll(struct pollfd* _poll, int max, sock_t* sock);
 int create_udp(sock_t *sock, __u32 ip, __u16 port);
+int create_tcp(sock_t *sock, __u32 ip, __u16 port, int _listen);
+sock_t *tcp_accept(sock_t *sock);
+int tcp_just_connect(int fd, unsigned int addr, unsigned short port, int times);
 int udp_sock_recv(sock_t * sock, struct sockaddr_in * addr);
 int udp_sock_send(sock_t * sock, void * data, int data_len, __u32 ip, __u16 port);
 void set_sockaddr_in(struct sockaddr_in *addr, __u32 ip, __u16 port);
 void close_sock(sock_t *sock);
+void free_sock(sock_t *sock);
 __u32 get_default_local_ip(void);
+sock_t* sock_find_fd(int fd);
+int infp_try_connect(const char* src, const char* dst, unsigned short sport, unsigned short dport, int ttl);
+
 
 #endif
 

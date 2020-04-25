@@ -177,6 +177,7 @@ static void help() {
 #endif
   printf("-E                       | Accept multicast MAC addresses (default=drop).\n");
   printf("-S                       | Do not connect P2P. Always use the supernode.\n");
+  printf("-b                       | Set default LAN IP To Use TCP p2p connect.\n");
 #ifdef __linux__
   printf("-T <tos>                 | TOS for packets (e.g. 0x48 for SSH like priority)\n");
 #endif
@@ -196,6 +197,21 @@ static void help() {
 
 /* *************************************************** */
 
+static inline __u32 StrToIp(const char *str)
+{
+	union {
+		struct in_addr ipaddr;
+		__u32 ip;
+	}addr;
+	memset(&addr, 0, sizeof(addr));
+#ifdef WIN32
+	inet_pton(AF_INET, str, &addr.ipaddr);
+#else
+	inet_aton(str, &addr.ipaddr);
+#endif
+	return addr.ip;
+}
+
 static int setOption(int optkey, char *optargument, n2n_priv_config_t *ec, n2n_edge_conf_t *conf) {
   /* traceEvent(TRACE_NORMAL, "Option %c = %s", optkey, optargument ? optargument : ""); */
 
@@ -205,6 +221,11 @@ static int setOption(int optkey, char *optargument, n2n_priv_config_t *ec, n2n_e
       scan_address(ec->ip_addr, N2N_NETMASK_STR_SIZE,
 		   ec->ip_mode, N2N_IF_MODE_SIZE,
 		   optargument);
+      break;
+    }
+  case 'b':
+    {
+      conf->tcp_ip = StrToIp(optargument);
       break;
     }
 
@@ -399,7 +420,7 @@ static int loadFromCLI(int argc, char *argv[], n2n_edge_conf_t *conf, n2n_priv_c
   u_char c;
 
   while((c = getopt_long(argc, argv,
-			 "k:a:bc:Eu:g:m:M:s:d:l:p:fvhrt:i:SDL:"
+			 "k:a:b:c:Eu:g:m:M:s:d:l:p:fvhrt:i:SDL:"
 #ifdef N2N_HAVE_AES
 			 "A"
 #endif

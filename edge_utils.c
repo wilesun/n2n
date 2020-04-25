@@ -260,8 +260,8 @@ n2n_edge_t* edge_init(const tuntap_dev *dev, const n2n_edge_conf_t *conf, int *r
     goto edge_init_error;
   }
 
-  if(infp_cli_init(conf->sn_ip_array[eee->sn_idx], eee->device.mac_addr))
-    goto edge_init_error;
+  if (infp_cli_init(conf->sn_ip_array[eee->sn_idx], eee->device.mac_addr, conf->tcp_ip))
+	goto edge_init_error;
 
 //edge_init_success:
   *rv = 0;
@@ -1010,56 +1010,57 @@ static int handle_PACKET(n2n_edge_t * eee,
 
     rx_transop_id = (n2n_transform_t)pkt->transform;
 
-    if(rx_transop_id == eee->conf.transop_id) {
-        uint8_t is_multicast;
-	eth_payload = decodebuf;
-	eh = (ether_hdr_t*)eth_payload;
-	eth_size = eee->transop.rev(&eee->transop,
-						    eth_payload, N2N_PKT_BUF_SIZE,
-						    payload, psize, pkt->srcMac);
-	++(eee->transop.rx_cnt); /* stats */
-	is_multicast = (is_ip6_discovery(eth_payload, eth_size) || is_ethMulticast(eth_payload, eth_size));
+	if (rx_transop_id == eee->conf.transop_id) {
+		uint8_t is_multicast;
+		eth_payload = decodebuf;
+		eh = (ether_hdr_t*)eth_payload;
+		eth_size = eee->transop.rev(&eee->transop,
+			eth_payload, N2N_PKT_BUF_SIZE,
+			payload, psize, pkt->srcMac);
+		++(eee->transop.rx_cnt); /* stats */
+		is_multicast = (is_ip6_discovery(eth_payload, eth_size) || is_ethMulticast(eth_payload, eth_size));
 
-	if(eee->conf.drop_multicast && is_multicast) {
-	  traceEvent(TRACE_INFO, "Dropping RX multicast");
-	  return(-1);
-        } else if((!eee->conf.allow_routing) && (!is_multicast)) {
-	  /* Check if it is a routed packet */
-	  if((ntohs(eh->type) == 0x0800) && (eth_size >= ETH_FRAMESIZE + IP4_MIN_SIZE)) {
-	    uint32_t *dst = (uint32_t*)&eth_payload[ETH_FRAMESIZE + IP4_DSTOFFSET];
-	    u_int8_t *dst_mac = (u_int8_t*)eth_payload;
+		if (eee->conf.drop_multicast && is_multicast) {
+			traceEvent(TRACE_INFO, "Dropping RX multicast");
+			return(-1);
+		}
+		else if ((!eee->conf.allow_routing) && (!is_multicast)) {
+			/* Check if it is a routed packet */
+			if ((ntohs(eh->type) == 0x0800) && (eth_size >= ETH_FRAMESIZE + IP4_MIN_SIZE)) {
+				uint32_t *dst = (uint32_t*)&eth_payload[ETH_FRAMESIZE + IP4_DSTOFFSET];
+				u_int8_t *dst_mac = (u_int8_t*)eth_payload;
 
-	    /* Note: all elements of the_ip are in network order */
-	    if(!memcmp(dst_mac, broadcast_mac, 6))
-	      traceEvent(TRACE_DEBUG, "Broadcast packet [%s]",
-			 intoa(ntohl(*dst), ip_buf, sizeof(ip_buf)));
-	    else if((*dst != eee->device.ip_addr)) {
-	      /* This is a packet that needs to be routed */
-	      traceEvent(TRACE_INFO, "Discarding routed packet [%s]",
-			 intoa(ntohl(*dst), ip_buf, sizeof(ip_buf)));
-	      return(-1);
-	    } else {
-	      /* This packet is directed to us */
-	      /* traceEvent(TRACE_INFO, "Sending non-routed packet"); */
-	    }
-	  }
+				/* Note: all elements of the_ip are in network order */
+				if (!memcmp(dst_mac, broadcast_mac, 6))
+					traceEvent(TRACE_DEBUG, "Broadcast packet [%s]",
+						intoa(ntohl(*dst), ip_buf, sizeof(ip_buf)));
+				else if ((*dst != eee->device.ip_addr)) {
+					/* This is a packet that needs to be routed */
+					traceEvent(TRACE_INFO, "Discarding routed packet [%s]",
+						intoa(ntohl(*dst), ip_buf, sizeof(ip_buf)));
+					return(-1);
+				}
+				else {
+					/* This packet is directed to us */
+					/* traceEvent(TRACE_INFO, "Sending non-routed packet"); */
+				}
+			}
+		}
+
+		/* Write ethernet packet to tap device. */
+		traceEvent(TRACE_DEBUG, "sending to TAP %u", (unsigned int)eth_size);
+		data_sent_len = tuntap_write(&(eee->device), eth_payload, eth_size);
+
+		if (data_sent_len == eth_size)
+		{
+			retval = 0;
+		}
 	}
-
-	/* Write ethernet packet to tap device. */
-	traceEvent(TRACE_DEBUG, "sending to TAP %u", (unsigned int)eth_size);
-	data_sent_len = tuntap_write(&(eee->device), eth_payload, eth_size);
-
-	if (data_sent_len == eth_size)
-	  {
-	    retval = 0;
-	  }
-      }
-    else
-      {
-	traceEvent(TRACE_ERROR, "invalid transop ID: expected %s(%u), got %s(%u)",
-		   transop_str(eee->conf.transop_id), eee->conf.transop_id,
-		   transop_str(rx_transop_id), rx_transop_id);
-      }
+	else {
+		traceEvent(TRACE_ERROR, "invalid transop ID: expected %s(%u), got %s(%u)",
+			transop_str(eee->conf.transop_id), eee->conf.transop_id,
+			transop_str(rx_transop_id), rx_transop_id);
+	}
   }
 
   return retval;
@@ -1275,12 +1276,20 @@ static int find_peer_destination(n2n_edge_t * eee,
     check_query_peer_info(eee, now, mac_address);
   }
 
+  if (scan)
+  {
+	  if (scan->p2p_fd)
+	  {
+		  if (!scan->p2p_timeout)
+			  *sock_fd = scan->p2p_fd;
+		  else
+			  memcpy(destination, &(eee->supernode), sizeof(struct sockaddr_in));
+	  }
+  }
+
   traceEvent(TRACE_DEBUG, "find_peer_address (%s) -> [%s]",
 	     macaddr_str(mac_buf, mac_address),
 	     sock_to_cstr(sockbuf, destination));
-
-  if(scan)
-    *sock_fd = scan->p2p_fd;
 
   return retval;
 }
@@ -2082,15 +2091,33 @@ void edge_init_conf_defaults(n2n_edge_conf_t *conf) {
 }
 
 n2n_edge_t *gl_eee = NULL;
+void edge_p2p_fd_timeout(char *macstr, int timeout)
+{
+	uint8_t mac[6] = { 0 };
+	struct peer_info *peer;
+
+	if (gl_eee)
+	{
+		str2mac(mac, macstr);
+		HASH_FIND_PEER(gl_eee->known_peers, mac, peer);
+		if (!peer)
+			HASH_FIND_PEER(gl_eee->pending_peers, mac, peer);
+
+		if (peer)
+		{
+			peer->p2p_timeout = timeout;
+			CYM_LOG(LV_FATAL, "set p2p timeout\n");
+		}
+	}
+}
 void edge_p2p_fd_close(char *macstr)
 {
 	uint8_t mac[6] = { 0 };
 	struct peer_info *peer;
 
-	str2mac(mac, macstr);
-
 	if (gl_eee)
 	{
+		str2mac(mac, macstr);
 		HASH_FIND_PEER(gl_eee->known_peers, mac, peer);
 		if (!peer)
 			HASH_FIND_PEER(gl_eee->pending_peers, mac, peer);
@@ -2098,6 +2125,7 @@ void edge_p2p_fd_close(char *macstr)
 		if (peer)
 		{
 			peer->p2p_fd = INVALID_SOCKET;
+			peer->p2p_timeout = 0;
 		}
 	}
 }

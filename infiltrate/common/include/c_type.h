@@ -12,10 +12,10 @@ typedef unsigned long long __u64;
 
 enum C_NAT_TYPE
 {
-	UNKNOWN_NAT_TYPE = 0,	// 未知,待检测
-	CONE_NAT_TYPE,			// 锥形NAT
-	SYMMETRICAL_NAT_TYPE,	// 对称NAT
-	NIUBILITY_NAT_TYPE,		// IP是公网IP
+	UNKNOWN_NAT_TYPE = 0,	// ??,???
+	CONE_NAT_TYPE,			// ??NAT
+	SYMMETRICAL_NAT_TYPE,	// ??NAT
+	NIUBILITY_NAT_TYPE,		// IP???IP
 };
 
 #endif

@@ -23,6 +23,7 @@ limitations under the License.
 #include <unistd.h>
 #include <poll.h>
 #include <arpa/inet.h>
+#include <signal.h>
 #endif
 
 #include "c_type.h"
@@ -77,7 +78,7 @@ void infp_timeout(unsigned long data)
 	mod_timer(&gl_cli_infp.timer, jiffies + HZ);
 }
 
-int infp_init(const char *server_addr, __u8 *device_mac)
+int infp_init(const char *server_addr, __u8 *device_mac, __u32 tcp_ip)
 {
 	int try_times = 0;
 	int i = 0;
@@ -97,6 +98,11 @@ int infp_init(const char *server_addr, __u8 *device_mac)
 		, device_mac[0], device_mac[1], device_mac[2], device_mac[3], device_mac[4], device_mac[5]);
 
 	// TODO: support dynamic domain
+	if(tcp_ip)
+	{
+		gl_cli_infp.allow_tcp = 1;
+		sprintf(gl_cli_infp.ip, "%s", IpToStr(tcp_ip));
+	}
 	gl_cli_infp.server_ip = StrToIp(server_ipstr);
 	gl_cli_infp.svr_m_port = htons(INFP_DEFAFULT_PORT);
 	gl_cli_infp.svr_b_port = htons(INFP_DEFAFULT_PORT+1);
@@ -152,10 +158,9 @@ int infp_main_recv(sock_t* sock)
 	struct sockaddr_in addr;
 	int ret = 0;
 	// 总会收包报错的
-	while(udp_sock_recv(sock, &addr) > 0)
+	while((ret = (udp_sock_recv(sock, &addr))) > 0)
 	{
 		cli_infp_recv_do(sock, &addr);
-		ret = 1;
 	}
 
 	return ret;
@@ -166,10 +171,9 @@ int infp_proxy_recv(sock_t* sock)
 	struct sockaddr_in addr;
 	int ret = 0;
 	// 总会收包报错的
-	while(udp_sock_recv(sock, &addr) > 0)
+	while((ret = (udp_sock_recv(sock, &addr))) > 0)
 	{
 		cli_infp_proxy_do(sock, &addr);
-		ret = 1;
 	}
 
 	return ret;
@@ -180,17 +184,21 @@ int infp_poll_run(int timeout)
 	int ret = -1;
 	int nready = 0, i = 0;
 	nready = poll(poll_arr, curfds, timeout);
-	if (nready == -1)
+	if (nready < 0)
 	{
 		perror("poll error:");
 		abort();
+	}
+	else if(nready == 0)
+	{
+		return 0;
 	}
 
 	for(i = 0; i < curfds; i++)
 	{
 		if(poll_arr[i].fd == gl_cli_infp.main_sock.fd)
 		{
-			if(poll_arr[i].events & POLLIN)
+			if(poll_arr[i].revents & POLLIN)
 			{
 				sock_t *sock = &gl_cli_infp.main_sock;
 
@@ -203,25 +211,45 @@ int infp_poll_run(int timeout)
 		}
 		else
 		{
-			if(poll_arr[i].events & POLLIN)
+			if(poll_arr[i].revents & POLLIN)
 			{
-				int index = 0;
-				for(index = 0; index < GUESE_PORT_MAX; index++)
+				sock_t* sock = sock_find_fd(poll_arr[i].fd);
+				if(!sock)
 				{
-					if(gl_cli_infp.proxy_sock[index].poll_i == i)
-						break;
+					CYM_LOG(LV_FATAL, "can found fd [%d]!!\n", poll_arr[i].fd);
+					goto out;
 				}
-				sock_t *sock = &gl_cli_infp.proxy_sock[index];
 
-				if(infp_proxy_recv(sock))
+				if(sock->listen)
 				{
+					sock_t * new_sock = tcp_accept(sock);
+					if(new_sock)
+					{
+						sock_del_poll(poll_arr, INFP_POLL_MAX, sock);
+						close_sock(sock);
+
+						curfds = sock_add_poll(poll_arr, INFP_POLL_MAX, new_sock);
+						if(curfds < 0)
+						{
+							goto out;
+						}
+					}
+				}
+				else
+				{
+					if(!infp_proxy_recv(sock))
+					{
+						sock_del_poll(poll_arr, INFP_POLL_MAX, sock);
+						close_sock(sock);
+					}
+
 					if(--nready <= 0)
 						break;
 				}
 			}
 		}
 
-		if(poll_arr[i].events & POLLERR)
+		if(poll_arr[i].revents & POLLERR)
 		{
 			goto out;
 		}
@@ -232,14 +260,15 @@ out:
 	return ret;
 }
 
-int infp_cli_init(const char *sn_addr, __u8 *device_mac)
+int infp_cli_init(const char *sn_addr, __u8 *device_mac, __u32 tcp_ip)
 {
 	int ret = -1;
 	gl_cli_infp.mode = 0;
+	signal(SIGPIPE, SIG_IGN);
 
 	CYM_LOG(LV_QUIET, "start\n");
 
-	if(infp_init(sn_addr, device_mac))
+	if(infp_init(sn_addr, device_mac, tcp_ip))
 	{
 		printf("infp_init failed\n");
 		goto FUNC_OUT;

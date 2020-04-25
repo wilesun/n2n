@@ -187,6 +187,7 @@ struct peer_info {
   time_t              last_seen;
   time_t              last_p2p;
   int                 p2p_fd; /* infiltrate fd */
+  int				  p2p_timeout; /* infiltrate ?¨ª¦Ì¨¤2??¨¨?¡§?D */
   int                 p2p_try;	/*  */
   time_t              last_sent_query;
 
@@ -216,6 +217,9 @@ typedef struct n2n_edge_conf {
   uint8_t             drop_multicast;         /**< Multicast ethernet addresses. */
   uint8_t             disable_pmtu_discovery; /**< Disable the Path MTU discovery. */
   uint8_t             allow_p2p;              /**< Allow P2P connection */
+  uint8_t             allow_tcp;              /**< Allow TCP P2P connection */
+  uint8_t             pad[3];
+  uint32_t            tcp_ip;                 /**< default LAN IP for IP.src */
   uint8_t             sn_num;                 /**< Number of supernode addresses defined. */
   uint8_t             tos;                    /** TOS for sent packets */
   char                *encrypt_key;

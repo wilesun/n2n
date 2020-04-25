@@ -20,6 +20,7 @@ limitations under the License.
 #include <unistd.h>
 #include <poll.h>
 #include <arpa/inet.h>
+#include <signal.h>
 
 #include "c_type.h"
 #include "sock.h"
@@ -88,6 +89,9 @@ int infp_init(void)
 	// 设置非阻塞
 	set_sock_nonblock(gl_infp.back_sock.fd);
 
+	if(create_tcp(&gl_infp.tcp_sock, 0, htons(gl_infp.main_port), 1) < 0)
+		return -1;
+
 	return 0;
 }
 
@@ -113,6 +117,11 @@ int init_poll(void)
 		return -1;
 	}
 
+	curfds = sock_add_poll(poll_arr, INFP_POLL_MAX, &gl_infp.tcp_sock);
+	if(curfds < 0)
+	{
+		return -1;
+	}
 	return 0;
 }
 
@@ -120,8 +129,8 @@ int infp_main_recv(sock_t* sock)
 {
 	struct sockaddr_in addr;
 	int ret = 0;
-	// 总会收包报错的
-	while(udp_sock_recv(sock, &addr) > 0)
+	// ???????
+	while((ret = udp_sock_recv(sock, &addr)) > 0)
 	{
 		infp_recv_do(sock, &addr);
 		ret = 1;
@@ -135,10 +144,14 @@ int infp_poll_run(int timeout)
 	int ret = -1;
 	int nready = 0, i = 0;
 	nready = poll(poll_arr, curfds, timeout);
-	if (nready == -1)
+	if (nready < 0)
 	{
 		perror("poll error:");
 		abort();
+	}
+	else if(nready == 0)
+	{
+		return 0;
 	}
 
 	for(i = 0; i < curfds; i++)
@@ -146,7 +159,7 @@ int infp_poll_run(int timeout)
 		if(poll_arr[i].fd == gl_infp.main_sock.fd
 			|| poll_arr[i].fd == gl_infp.back_sock.fd)
 		{
-			if(poll_arr[i].events & POLLIN)
+			if(poll_arr[i].revents & POLLIN)
 			{
 				sock_t *sock = NULL;
 				if(poll_arr[i].fd == gl_infp.main_sock.fd)
@@ -154,7 +167,7 @@ int infp_poll_run(int timeout)
 				else if(poll_arr[i].fd == gl_infp.back_sock.fd)
 					sock = &gl_infp.back_sock;
 				else
-					goto out;	// 没这种情况
+					goto out;	// ?????
 
 				if(infp_main_recv(sock))
 				{
@@ -163,16 +176,84 @@ int infp_poll_run(int timeout)
 				}
 			}
 
-			// 没有POLLOUT这个说法, 直接sendto
-			if(poll_arr[i].events & POLLERR)
+			// ??POLLOUT????, ??sendto
+			if(poll_arr[i].revents & POLLERR)
 			{
 				goto out;
 			}
 		}
-		else
+		else if(poll_arr[i].fd == gl_infp.tcp_sock.fd)
 		{
-			printf("???\n");
-			goto out;
+			if(poll_arr[i].revents & POLLIN)
+			{
+				sock_t* sock = tcp_accept(&gl_infp.tcp_sock);
+				if(sock)
+				{
+					int ret = sock_add_poll(poll_arr, INFP_POLL_MAX, sock);
+					if(ret < 0)
+					{
+						close_sock(sock);
+						if(--nready <= 0)
+							break;
+
+						continue;
+					}
+					curfds = ret;
+					printf("accept fd [%d] ok\n", sock->fd);
+				}
+				if(--nready <= 0)
+					break;
+			}
+
+			// ??POLLOUT????, ??sendto
+			if(poll_arr[i].revents & POLLERR)
+			{
+				goto out;
+			}
+		}
+		else if(poll_arr[i].fd != -1)
+		{
+			sock_t* sock = sock_find_fd(poll_arr[i].fd);
+			if(!sock)
+			{
+				close(poll_arr[i].fd);
+				poll_arr[i].fd = INVALID_SOCKET;
+				if(--nready <= 0)
+					break;
+
+				continue;
+			}
+
+			if(poll_arr[i].revents & POLLIN)
+			{
+				int ret = infp_main_recv(sock);
+				if(ret > 0)
+				{
+					if(--nready <= 0)
+						break;
+				}
+				else if(ret == 0)
+				{
+					sock_del_poll(poll_arr, INFP_POLL_MAX, sock);
+					close_sock(sock);
+				}
+				else
+				{
+				// TODO: ????????
+				}
+			}
+
+			// TODO: ??
+			if(poll_arr[i].revents & POLLOUT)
+			{
+				if(--nready <= 0)
+					break;
+			}
+
+			if(poll_arr[i].revents & POLLERR)
+			{
+				goto out;
+			}
 		}
 	}
 
@@ -185,6 +266,8 @@ int infp_svr_init(void)
 {
 	int ret = -1;
 	CYM_LOG(LV_QUIET, "start\n");
+
+	signal(SIGPIPE, SIG_IGN);
 
 	if(infp_init())
 	{

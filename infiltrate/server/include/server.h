@@ -30,8 +30,9 @@ typedef struct infp_s
 	__u16 main_port;		// 监听的主端口, 主连接用
 	__u16 back_port;		// 监听的副端口, 用于检测NAT类型
 
-	sock_t main_sock;		// 对应main_port
-	sock_t back_sock;		// 对应back_port
+	sock_t main_sock;		// udp主连接 对应main_port
+	sock_t back_sock;		// udp副连接 对应back_port
+	sock_t tcp_sock;		// tcp主连接
 
 	struct list_head dev_list;
 	struct hlist_head dev_hash[INFP_HASH_MAX];
@@ -43,6 +44,13 @@ typedef struct infp_port_s
 	__u16 src_port;
 	__u16 nat_port;
 }infp_port_t;
+typedef struct infp_cli_des_s
+{
+	char des[64];
+	__u32 uptime;	// 更新时间 jiffies
+
+	struct list_head list_to;	// 关联 infp_cli_t -> p2p_list
+}infp_cli_des_t;
 
 typedef struct infp_cli_s
 {
@@ -63,10 +71,18 @@ typedef struct infp_cli_s
 	__u8 failed_count;	// 打洞失败次数
 	__u8 connected;		// 有木有连人
 
+	__u8 allow_tcp;		// 该客户端是否支持tcp打洞
+	__u16 nat_tcp;		// 与服务器连接的tcp的nat port
+	__u8 pad;
+
+	int  guess_tcp;		// 端口更新规律(tcp猜测用)
+
 	__u32 uptime;		// 更新时间 jiffies
 
 	struct list_head list_to;	// 关联infp_t.dev_list
 	struct hlist_node hash_to;	// 关联infp_t.dev_hash ip+name作为hash值
+
+	struct list_head p2p_list;	// 尝试打过洞的节点列表(用于防止反复打洞)
 }infp_cli_t;
 
 extern infp_t gl_infp;

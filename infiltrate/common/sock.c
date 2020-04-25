@@ -23,6 +23,42 @@ limitations under the License.
 
 #define SOCK_BUF_LEN 102400
 #define GET_GATEWAY_CMD "route | grep 'default' | awk '{print $8}'"
+#define SOCK_HASH_MAX 0x100
+#define SOCK_HASH_MASK 0xff
+
+struct hlist_head sock_hash[SOCK_HASH_MAX];
+int sock_hash_init = 0;
+
+// TODO:need support thread safe
+void sock_add_hash(sock_t* sock)
+{
+	if(!sock_hash_init)
+	{
+		int i = 0;
+		for(i = 0; i < SOCK_HASH_MAX; i++)
+			INIT_HLIST_HEAD(&sock_hash[i]);
+
+		sock_hash_init = 1;
+	}
+
+	// ÒÔ·ÀÍòÒ», ÏÈÉ¾
+	hlist_del_init(&sock->hash_to);
+	hlist_add_head(&sock->hash_to, &sock_hash[BobHash(sock->fd) & SOCK_HASH_MASK]);
+}
+
+sock_t* sock_find_fd(int fd)
+{
+	sock_t* sock;
+	struct hlist_head* head = &sock_hash[BobHash(fd) & SOCK_HASH_MASK];
+
+	hlist_for_each_entry(sock, head, hash_to)
+	{
+		if(sock->fd == fd)
+			return sock;
+	}
+
+	return NULL;
+}
 
 #if 0
 int get_gateway_devname(char *gate)
@@ -226,6 +262,34 @@ int udp_sock_recv(sock_t *sock, struct sockaddr_in *addr)
 	return ret;
 }
 
+sock_t *tcp_accept(sock_t *sock)
+{
+	struct sockaddr_in addr;
+	socklen_t addr_len = sizeof(addr);
+	sock_t *new_sock = NULL;
+	int fd = accept(sock->fd,(struct sockaddr *)&addr, &addr_len);
+	if(fd < 0)
+	{
+		perror("call to accept");
+		return NULL;
+	}
+	
+	new_sock = mem_malloc(sizeof(sock_t));
+	if(!new_sock)
+	{
+		close(fd);
+		perror("malloc error");
+		return NULL;
+	}
+
+	new_sock->malloced = 1;
+	new_sock->fd = fd;
+	set_sock_timeout(fd, 300);
+	sock_add_hash(new_sock);
+	memcpy(&new_sock->addr, &addr, sizeof(new_sock->addr));
+
+	return new_sock;
+}
 
 int create_udp(sock_t *sock, __u32 ip, __u16 port)
 {
@@ -260,10 +324,233 @@ int create_udp(sock_t *sock, __u32 ip, __u16 port)
 		return -1;
 	}
 
-	CYM_LOG(LV_FATAL, "bind %s:%d, fd [%d] ok\n", IpToStr(ip), ntohs(port), sock->fd);
+	CYM_LOG(LV_FATAL, "udp bind %s:%d, fd [%d] ok\n", IpToStr(ip), ntohs(port), sock->fd);
+
+	sock_add_hash(sock);
 
 	return sock->fd;
 }
+
+// timeout å•ä½ æ¯«ç§’
+int create_tcp(sock_t *sock, __u32 ip, __u16 port, int _listen)
+{
+	struct sockaddr_in addr;
+	socklen_t addr_len = sizeof(addr);
+	int opt = 1;
+	int try_tm = 5;
+
+	if(!sock)
+		return -1;
+
+	// ä¸ç®¡å•¥æƒ…å†µ,å…ˆæ¸…ç†
+	close_sock(sock);
+
+	sock->fd = socket(AF_INET, SOCK_STREAM, 0);
+	if(sock->fd < 0)
+	{
+		perror("socket:");
+		return -1;
+	}
+
+	if(ip || port)
+	{
+		set_sockaddr_in(&addr, ip, port);
+		memcpy(&sock->addr, &addr, sizeof(sock->addr));
+	}
+	else if(sock)
+	{
+		memcpy(&addr, &sock->addr, sizeof(addr));
+	}
+	else
+	{
+		printf("%s[%s]:%d ?\n", __FILE__, __FUNCTION__, __LINE__);
+		return -1;
+	}
+
+	//ç«¯å£å¤ç”¨
+	setsockopt(sock->fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&opt, sizeof(opt));
+	set_sock_timeout(sock->fd, 500);	// Ä¬ÈÏ500ºÁÃëÑÓ³Ù
+
+	while(bind(sock->fd, (struct sockaddr *)&addr, addr_len) < 0)
+	{
+		if(try_tm-- < 0)
+		{
+			perror("bind:");
+			close(sock->fd);
+			sock->fd = INVALID_SOCKET;
+			return -1;
+		}
+		printf("try bind tcp port %u\n", ntohs(addr.sin_port));
+	}
+
+	if(_listen)
+	{
+		if(listen(sock->fd, 0x100) < 0)
+		{
+			perror("call to listen");
+			close(sock->fd);
+			sock->fd = INVALID_SOCKET;
+			return -1;
+		}
+		sock->listen = 1;
+	}
+
+	CYM_LOG(LV_FATAL, "tcp bind %s:%d, fd [%d] ok\n", IpToStr(addr.sin_addr.s_addr), ntohs(addr.sin_port), sock->fd);
+
+	sock_add_hash(sock);
+
+	return sock->fd;
+}
+
+int tcp_just_connect(int fd, unsigned int addr, unsigned short port, int times)
+{
+	struct sockaddr_in sin;
+	int ret = -1;
+	int try_tm = times;
+	bzero(&sin,sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr=addr;
+	sin.sin_port=port;
+
+	printf("try connect tcp %s:%d\n", IpToStr(addr), ntohs(port));
+	while(connect(fd,(void *)&sin,sizeof(sin)) < 0)
+	{
+		if(try_tm-- <= 0)
+		{
+			goto out;
+		}
+	}
+
+	ret = 0;
+out:
+	return ret;
+}
+
+#define IP_HEADER_LEN sizeof(struct ip)
+#define TCP_HEADER_LEN sizeof(struct tcphdr)
+
+void initIPHeader(struct ip* header, int ttl, const char* src, const char* dst) {
+	header->ip_v = IPVERSION;
+	header->ip_hl = sizeof(struct ip) / 4;
+	header->ip_tos = 0;
+	header->ip_len = htons(IP_HEADER_LEN + TCP_HEADER_LEN);
+	header->ip_id = 0;
+	header->ip_off = 0;
+	header->ip_ttl = MAXTTL; 
+	header->ip_p = IPPROTO_TCP;
+	header->ip_sum = 0;
+	inet_pton(AF_INET, src, &header->ip_src.s_addr);
+	inet_pton(AF_INET, dst, &header->ip_dst.s_addr);
+}
+ 
+void initTCPHeader(struct tcphdr* header, unsigned short sport, unsigned short dport) {
+	header->source = htons(sport);
+	header->dest = htons(dport);
+ 
+	header->doff = sizeof(struct tcphdr) / 4;
+	header->syn = 1;
+	header->window = htons(4096);
+	header->check = 0;
+	header->seq = 0;
+	header->ack_seq = 0;
+}
+ 
+struct psdHeader {
+	unsigned int srcIP;
+	unsigned int destIP;
+	unsigned short zero:8;
+	unsigned short proto:8;
+	unsigned short totalLen;
+};
+ 
+void initPsdHeader(struct psdHeader* header, struct ip* iHeader) {
+	header->srcIP = iHeader->ip_src.s_addr;
+	header->destIP = iHeader->ip_dst.s_addr;
+ 
+	header->zero = 0;
+	header->proto = IPPROTO_TCP;
+	header->totalLen = htons(0x0014);
+}
+ 
+unsigned short calcTCPCheckSum(const char* buf) {
+	size_t size = TCP_HEADER_LEN + sizeof(struct psdHeader);
+	unsigned int checkSum = 0;
+	int i;
+	for (i = 0; i < size; i += 2) {
+		unsigned short first = (unsigned short)buf[i] << 8;
+		unsigned short second = (unsigned short)buf[i+1] & 0x00ff;
+		checkSum += first + second;
+	}
+	while (1) {
+		unsigned short c = (checkSum >> 16);
+		if (c > 0) {
+			checkSum = (checkSum << 16) >> 16;
+			checkSum += c;
+		} else {
+			break;
+		}
+	}
+	return ~checkSum;
+}
+
+int infp_try_connect(const char* src, const char* dst, unsigned short sport, unsigned short dport, int ttl)
+{
+	int sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+	if (sock < 0) {
+		perror("Socket Error");
+		return -1;
+	}
+	const int on = 1;
+	setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on));
+
+	struct tcphdr* tHeader = (struct tcphdr*) malloc(sizeof(struct tcphdr));
+	memset(tHeader, 0, TCP_HEADER_LEN);
+	initTCPHeader(tHeader, sport, dport);
+	struct ip* iHeader = (struct ip*) malloc(sizeof(struct ip));
+	memset(iHeader, 0, IP_HEADER_LEN);
+	initIPHeader(iHeader, ttl, src, dst);
+	struct psdHeader* pHeader = (struct psdHeader*) malloc(sizeof(struct psdHeader));
+	initPsdHeader(pHeader, iHeader);
+ 
+	char sumBuf[TCP_HEADER_LEN + sizeof(struct psdHeader)];
+	memset(sumBuf, 0, TCP_HEADER_LEN + sizeof(struct psdHeader));
+	memcpy(sumBuf, pHeader, sizeof(struct psdHeader));
+	memcpy(sumBuf + sizeof(struct psdHeader), tHeader, TCP_HEADER_LEN);
+ 
+	int ni = memcmp(sumBuf, pHeader, sizeof(struct psdHeader));
+	if (ni != 0) {
+		perror("Compare");
+	}
+	ni = memcmp(sumBuf + sizeof(struct psdHeader), tHeader, TCP_HEADER_LEN);
+	if (ni != 0) {
+		perror("Compare 2");
+	}
+ 
+	tHeader->check = htons(calcTCPCheckSum(sumBuf));
+ 
+	int totalLen = IP_HEADER_LEN + TCP_HEADER_LEN;
+	char buf[totalLen];
+ 
+	memcpy(buf, iHeader, IP_HEADER_LEN);
+	memcpy(buf + IP_HEADER_LEN, tHeader, TCP_HEADER_LEN);
+ 
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(struct sockaddr_in));
+	addr.sin_family = AF_INET;
+	inet_pton(AF_INET, dst, &addr.sin_addr.s_addr);
+	addr.sin_port = htons(dport);
+ 
+	socklen_t len = sizeof(struct sockaddr_in);
+	int n = sendto(sock, buf, totalLen, 0, (struct sockaddr*)&addr, len);
+	if (n < 0) {
+		perror("Send Error");
+	}
+
+	close(sock);
+
+	return n;
+}
+
 
 void close_sock(sock_t *sock)
 {
@@ -285,8 +572,12 @@ void close_sock(sock_t *sock)
 		sock->send_buf = NULL;
 	}
 
-	memset(sock, 0, sizeof(sock_t));
-	sock->fd = INVALID_SOCKET;
-}
+	hlist_del_init(&sock->hash_to);
 
+	//memset(sock, 0, sizeof(sock_t));
+	sock->fd = INVALID_SOCKET;
+
+	if(sock->malloced)
+		mem_free(sock);
+}
 

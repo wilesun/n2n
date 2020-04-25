@@ -10,7 +10,7 @@ int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr);
 void cli_infp_check_proxy_list(void);
 
 int cli_infp_send_stun_hello(sock_t* sock, cli_infp_t* infp, __u32 ip, __u16 port);
-int infp_cli_init(const char *sn_addr, __u8 *device_mac);
+int infp_cli_init(const char *sn_addr, __u8 *device_mac, __u32 tcp_ip);
 int cli_infp_check_ping(__u8 *buf, __u32 recv_len, struct sockaddr_in *addr);
 int inf_proxy_check_exist(void* p_mac, void* p_addr, int* fd, void* real_addr);
 int inf_proxy_check_send(void* p_mac, void* p_addr, int* fd);
