@@ -324,6 +324,7 @@ int quick_edge_init(char *device_name, char *community_name,
 		    int *keep_on_running);
 
 int edge_fd_set_inf(int parm_max_sock, fd_set* socket_mask, int* proxy_fds, int* proxy_fd_num);
+extern n2n_edge_t* gl_eee;
 
 
 #endif /* _N2N_H_ */

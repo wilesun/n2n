@@ -614,7 +614,7 @@ int is_empty_ip_address(const n2n_sock_t * sock) {
   size_t i;
 
   if(sock->port == 0)
-    return 0;
+    return 1;
 
   if(AF_INET6 == sock->family)
     {
@@ -2134,8 +2134,13 @@ void edge_p2p_fd_close(char *macstr)
 
 		if (peer)
 		{
+			CYM_LOG(LV_INFO, "found peer %s\n", macstr);
 			peer->p2p_fd = INVALID_SOCKET;
 			peer->p2p_timeout = 0;
+		}
+		else
+		{
+			CYM_LOG(LV_FATAL, "can't found peer %s\n", macstr);
 		}
 	}
 }

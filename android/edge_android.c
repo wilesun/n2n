@@ -341,7 +341,9 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     pthread_mutex_unlock(&status.mutex);
     report_edge_status();
 	traceEvent(TRACE_NORMAL, "edge started");
+	gl_eee = eee;
 	rc = run_edge_loop(eee, &keep_on_running);
+	gl_eee = NULL
 	print_edge_stats(eee);
 
 	/* Cleanup */

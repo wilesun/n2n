@@ -768,7 +768,9 @@ int main(int argc, char* argv[]) {
 
   keep_on_running = 1;
   traceEvent(TRACE_NORMAL, "edge started");
+  gl_eee = eee;
   rc = run_edge_loop(eee, &keep_on_running);
+  gl_eee = NULL;
   print_edge_stats(eee);
 
   /* Cleanup */
