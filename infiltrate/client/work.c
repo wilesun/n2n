@@ -482,13 +482,6 @@ int cli_infp_do_proxy_ack(cJSON* root, struct sockaddr_in *addr, sock_t *sock)
 	proxy = inf_proxy_find_cli(dst_name);
 	if (proxy)
 	{
-		if (proxy->inited)
-		{
-			// ¸Õ´´½¨2ÃëÄÚ²»ÈÃÖØÁ¬
-			if(jiffies - proxy->uptime < 2 * HZ)
-				return 0;
-		}
-
 		proxy->inited = 1;
 	}
 	else
