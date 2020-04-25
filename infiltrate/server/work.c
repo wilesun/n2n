@@ -23,6 +23,8 @@ limitations under the License.
 #define INFP_NO_OFFSET 1
 #define INFP_DEF_OFFSET 3
 
+extern struct pollfd poll_arr[];
+
 void memxor(unsigned char* data, int len)
 {
 	int i = 0;

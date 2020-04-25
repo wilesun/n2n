@@ -9,6 +9,7 @@ int infp_poll_run(int timeout);
 int infp_svr_init(void);
 void inf_get_fds(int* fds, int* fd_num);
 
+#define INFP_POLL_MAX 32		// ËæÊÖÐ´µÄ, Ä¿Ç°Ö»¼àÌý32¸ö
 
 #endif
 
