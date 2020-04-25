@@ -45,7 +45,7 @@ void inf_proxy_del_cli(inf_proxy_t* del)
 	{
 		CYM_LOG(LV_INFO, "[%s] offline\n", del->name);
 
-		if(del->fd > 0)
+		if(del->fd != INVALID_SOCKET)
 		{
 			edge_p2p_fd_close(del->name);
 			close(del->fd);
@@ -129,8 +129,13 @@ void cli_infp_check_proxy_list(void)
 	{
 		sock_t sock;
 		temp = list_entry(pos, inf_proxy_t, list_to);
-		if(temp->fd <= 0)
+		if (temp->fd == INVALID_SOCKET)
+		{
+			if(temp->timeout++ > 3)
+				inf_proxy_del_cli(temp);
+
 			continue;
+		}
 
 		sock.fd = temp->fd;
 		if (now - temp->uptime > 15 * HZ)
@@ -179,7 +184,7 @@ void inf_proxy_get_fds(int* fds, int* fd_num)
 	list_for_each(pos, &gl_cli_infp.proxy_list)
 	{
 		temp = list_entry(pos, inf_proxy_t, list_to);
-		if(temp->fd > 0)
+		if(temp->fd != INVALID_SOCKET)
 		{
 			fds[fd_nums++] = temp->fd;
 		}
@@ -195,7 +200,7 @@ void inf_get_fds(int* fds, int* fd_num)
 
 	for(i = 0; i < INFP_POLL_MAX; i++)
 	{
-		if(poll_arr[i].fd > 0)
+		if(poll_arr[i].fd != INVALID_SOCKET)
 			fds[fd_nums++] = poll_arr[i].fd;
 	}
 
@@ -416,7 +421,7 @@ int cli_infp_get_nat_port(sock_t* sock, cli_infp_t* infp, char* dst_ip, char* ds
 
 	for(i = 0; i < GUESE_PORT_MAX; i++)
 	{
-		if(gl_cli_infp.proxy_sock[i].fd > 0)
+		if(gl_cli_infp.proxy_sock[i].fd != INVALID_SOCKET)
 		{
 			sock_del_poll(poll_arr, INFP_POLL_MAX, &gl_cli_infp.proxy_sock[i]);
 			close_sock(&gl_cli_infp.proxy_sock[i]);
@@ -650,7 +655,6 @@ int cli_infp_do_tcp_stun_hello(cli_infp_t* infp, int offset, int mode, __u32 ip,
 		{
 			for(i = 0; i < offset; i++)
 			{
-				// 第二个端口开始连
 				infp_try_connect(gl_cli_infp.ip, IpToStr(ip), infp->proxy_port[1], port+i, ttl);
 			}
 		}
@@ -904,7 +908,7 @@ int cli_infp_recv_do(sock_t *sock, struct sockaddr_in *addr)
 {
 	int ret = -1;
 
-	if(sock->recv_buf && sock->recv_len)
+	if(gl_cli_infp.allow_p2p && sock->recv_buf && sock->recv_len)
 	{
 		memxor(sock->recv_buf, sock->recv_len);
 		CYM_LOG(LV_DEBUG, "recv [%s]\n", sock->recv_buf);
@@ -1070,7 +1074,7 @@ int cli_infp_proxy_do(sock_t *sock, struct sockaddr_in *addr)
 
 		for (i = 0; i < GUESE_PORT_MAX; i++)
 		{
-			if (gl_cli_infp.proxy_sock[i].fd > 0)
+			if (gl_cli_infp.proxy_sock[i].fd != INVALID_SOCKET)
 			{
 				sock_del_poll(poll_arr, INFP_POLL_MAX, &gl_cli_infp.proxy_sock[i]);
 				close_sock(&gl_cli_infp.proxy_sock[i]);
@@ -1117,7 +1121,7 @@ int inf_proxy_check_exist(void* p_mac, void* p_addr, int* fd, void* real_addr)
 	if (proxy)
 	{
 		//CYM_LOG(LV_FATAL, "found proxy [%s] fd = %d uptime = %d\n", mac_str, proxy->fd, jiffies - proxy->uptime);
-		if (proxy->fd > 0)
+		if (proxy->fd != INVALID_SOCKET)
 		{
 			if (real_addr)
 			{
@@ -1155,7 +1159,7 @@ int inf_proxy_check_send(void* p_mac, void* p_addr, int* fd)
 
 	if(proxy)
 	{
-		if(proxy->fd > 0)
+		if(proxy->fd != INVALID_SOCKET)
 		{
 			addr->family = (__u8)proxy->addr.sin_family;
 			addr->port = ntohs(proxy->addr.sin_port);

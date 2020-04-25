@@ -260,7 +260,7 @@ n2n_edge_t* edge_init(const tuntap_dev *dev, const n2n_edge_conf_t *conf, int *r
     goto edge_init_error;
   }
 
-  if (infp_cli_init(conf->sn_ip_array[eee->sn_idx], eee->device.mac_addr, conf->tcp_ip))
+  if (infp_cli_init(conf->sn_ip_array[eee->sn_idx], eee->device.mac_addr, conf->tcp_ip, conf->allow_p2p))
 	goto edge_init_error;
 
 //edge_init_success:
@@ -846,7 +846,7 @@ static void send_register(n2n_edge_t * eee,
   traceEvent(TRACE_INFO, "Send REGISTER to %s",
 	     sock_to_cstr(sockbuf, remote_peer));
 
-  /* sent = */ sendto_sock(sock_fd > 0 ? sock_fd : eee->udp_sock, pktbuf, idx, remote_peer);
+  /* sent = */ sendto_sock(sock_fd != INVALID_SOCKET ? sock_fd : eee->udp_sock, pktbuf, idx, remote_peer);
 }
 
 /* ************************************** */
@@ -887,7 +887,7 @@ static void send_register_ack(n2n_edge_t * eee,
 	     sock_to_cstr(sockbuf, remote_peer));
 
 
-  /* sent = */ sendto_sock(sock_fd > 0 ? sock_fd : eee->udp_sock, pktbuf, idx, remote_peer);
+  /* sent = */ sendto_sock(sock_fd != INVALID_SOCKET ? sock_fd : eee->udp_sock, pktbuf, idx, remote_peer);
 }
 
 /* ************************************** */
@@ -1329,7 +1329,7 @@ static int send_packet(n2n_edge_t * eee,
     sock_to_cstr(sockbuf, &destination),
     macaddr_str(mac_buf, dstMac), pktlen);
 
-  /* s = */ sendto_sock(sock_fd > 0 ? sock_fd : eee->udp_sock, pktbuf, pktlen, &destination);
+  /* s = */ sendto_sock(sock_fd != INVALID_SOCKET ? sock_fd : eee->udp_sock, pktbuf, pktlen, &destination);
 
   return 0;
 }

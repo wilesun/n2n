@@ -197,11 +197,11 @@ static void help() {
 
 /* *************************************************** */
 
-static inline __u32 StrToIp(const char *str)
+static inline unsigned int StrToIp(const char *str)
 {
 	union {
 		struct in_addr ipaddr;
-		__u32 ip;
+		unsigned int ip;
 	}addr;
 	memset(&addr, 0, sizeof(addr));
 #ifdef WIN32

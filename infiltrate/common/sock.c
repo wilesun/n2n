@@ -1,4 +1,4 @@
-/*
+﻿/*
 Copyright 2020 chseasipder
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,18 +41,20 @@ void sock_add_hash(sock_t* sock)
 		sock_hash_init = 1;
 	}
 
-	// �Է���һ, ��ɾ
+	// 以防万一, 先删
 	hlist_del_init(&sock->hash_to);
 	hlist_add_head(&sock->hash_to, &sock_hash[BobHash(sock->fd) & SOCK_HASH_MASK]);
 }
 
 sock_t* sock_find_fd(int fd)
 {
+	struct hlist_node* pos;
 	sock_t* sock;
 	struct hlist_head* head = &sock_hash[BobHash(fd) & SOCK_HASH_MASK];
 
-	hlist_for_each_entry(sock, head, hash_to)
+	hlist_for_each(pos, head)
 	{
+		sock = hlist_entry(pos, sock_t, hash_to);
 		if(sock->fd == fd)
 			return sock;
 	}
@@ -190,7 +192,7 @@ int sock_del_poll(struct pollfd* _poll, int max, sock_t* sock)
 	return curfd + 1;
 }
 
-// IP ������, PORT ������
+// IP 网络序, PORT 网络序
 void set_sockaddr_in(struct sockaddr_in *addr, __u32 ip, __u16 port)
 {
 	memset(addr, 0, sizeof(*addr));
@@ -331,7 +333,7 @@ int create_udp(sock_t *sock, __u32 ip, __u16 port)
 	return sock->fd;
 }
 
-// timeout 单位 毫秒
+// timeout 鍗曚綅 姣
 int create_tcp(sock_t *sock, __u32 ip, __u16 port, int _listen)
 {
 	struct sockaddr_in addr;
@@ -342,7 +344,7 @@ int create_tcp(sock_t *sock, __u32 ip, __u16 port, int _listen)
 	if(!sock)
 		return -1;
 
-	// 不管啥情况,先清理
+	// 涓嶇鍟ユ儏鍐?鍏堟竻鐞?
 	close_sock(sock);
 
 	sock->fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -367,9 +369,9 @@ int create_tcp(sock_t *sock, __u32 ip, __u16 port, int _listen)
 		return -1;
 	}
 
-	//端口复用
+	//绔彛澶嶇敤
 	setsockopt(sock->fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&opt, sizeof(opt));
-	set_sock_timeout(sock->fd, 500);	// Ĭ��500�����ӳ�
+	set_sock_timeout(sock->fd, 500);	// 默认500毫秒延迟
 
 	while(bind(sock->fd, (struct sockaddr *)&addr, addr_len) < 0)
 	{
@@ -407,7 +409,7 @@ int tcp_just_connect(int fd, unsigned int addr, unsigned short port, int times)
 	struct sockaddr_in sin;
 	int ret = -1;
 	int try_tm = times;
-	bzero(&sin,sizeof(sin));
+	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr=addr;
 	sin.sin_port=port;
@@ -426,17 +428,115 @@ out:
 	return ret;
 }
 
+#ifdef WIN32
+
+#if defined (__GLIBC__)
+# include <endian.h>
+# if (__BYTE_ORDER == __LITTLE_ENDIAN)
+#  define BOOST_LITTLE_ENDIAN
+# elif (__BYTE_ORDER == __BIG_ENDIAN)
+#  define BOOST_BIG_ENDIAN
+# elif (__BYTE_ORDER == __PDP_ENDIAN)
+#  define BOOST_PDP_ENDIAN
+# else
+#  error Unknown machine endianness detected.
+# endif
+# define BOOST_BYTE_ORDER __BYTE_ORDER
+#elif defined(_BIG_ENDIAN) && !defined(_LITTLE_ENDIAN)
+# define BOOST_BIG_ENDIAN
+# define BOOST_BYTE_ORDER 4321
+#elif defined(_LITTLE_ENDIAN) && !defined(_BIG_ENDIAN)
+# define BOOST_LITTLE_ENDIAN
+# define BOOST_BYTE_ORDER 1234
+#elif defined(__sparc) || defined(__sparc__) \
+   || defined(_POWER) || defined(__powerpc__) \
+   || defined(__ppc__) || defined(__hpux) \
+   || defined(_MIPSEB) || defined(_POWER) \
+   || defined(__s390__)
+# define BOOST_BIG_ENDIAN
+# define BOOST_BYTE_ORDER 4321
+#elif defined(__i386__) || defined(__alpha__) \
+   || defined(__ia64) || defined(__ia64__) \
+   || defined(_M_IX86) || defined(_M_IA64) \
+   || defined(_M_ALPHA) || defined(__amd64) \
+   || defined(__amd64__) || defined(_M_AMD64) \
+   || defined(__x86_64) || defined(__x86_64__) \
+   || defined(_M_X64) || defined(__bfin__)
+
+# define BOOST_LITTLE_ENDIAN
+# define BOOST_BYTE_ORDER 1234
+#else
+# error The file boost/detail/endian.hpp needs to be set up for your CPU type.
+#endif
+
+struct ip {
+#if defined(BOOST_LITTLE_ENDIAN)
+	u_char  ip_hl : 4,        /* header length */
+		ip_v : 4;         /* version */
+#elif defined(BOOST_BIG_ENDIAN)
+	u_char  ip_v : 4,         /* version */
+		ip_hl : 4;        /* header length */
+#endif
+	u_char  ip_tos;         /* type of service */
+	short   ip_len;         /* total length */
+	u_short ip_id;          /* identification */
+	short   ip_off;         /* fragment offset field */
+#define IP_DF 0x4000            /* dont fragment flag */
+#define IP_MF 0x2000            /* more fragments flag */
+	u_char  ip_ttl;         /* time to live */
+	u_char  ip_p;           /* protocol */
+	u_short ip_sum;         /* checksum */
+	struct  in_addr ip_src, ip_dst;  /* source and dest address */
+};
+
+struct tcphdr {
+	u_short source;
+	u_short dest;
+	u_int seq;
+	u_int ack_seq;
+#if defined(BOOST_LITTLE_ENDIAN)
+	u_short   res1 : 4,
+		doff : 4,
+		fin : 1,
+		syn : 1,
+		rst : 1,
+		psh : 1,
+		ack : 1,
+		urg : 1,
+		ece : 1,
+		cwr : 1;
+#elif defined(BOOST_BIG_ENDIAN)
+	u_short   doff : 4,
+		res1 : 4,
+		cwr : 1,
+		ece : 1,
+		urg : 1,
+		ack : 1,
+		psh : 1,
+		rst : 1,
+		syn : 1,
+		fin : 1;
+#else
+#error "error!!!"
+#endif
+	u_short window;
+	u_short check;
+	u_short urg_ptr;
+};
+
+#endif
+
 #define IP_HEADER_LEN sizeof(struct ip)
 #define TCP_HEADER_LEN sizeof(struct tcphdr)
 
 void initIPHeader(struct ip* header, int ttl, const char* src, const char* dst) {
-	header->ip_v = IPVERSION;
+	header->ip_v = 4;	// ipv4
 	header->ip_hl = sizeof(struct ip) / 4;
 	header->ip_tos = 0;
 	header->ip_len = htons(IP_HEADER_LEN + TCP_HEADER_LEN);
 	header->ip_id = 0;
 	header->ip_off = 0;
-	header->ip_ttl = MAXTTL; 
+	header->ip_ttl = ttl;
 	header->ip_p = IPPROTO_TCP;
 	header->ip_sum = 0;
 	inet_pton(AF_INET, src, &header->ip_src.s_addr);
@@ -473,7 +573,7 @@ void initPsdHeader(struct psdHeader* header, struct ip* iHeader) {
 }
  
 unsigned short calcTCPCheckSum(const char* buf) {
-	size_t size = TCP_HEADER_LEN + sizeof(struct psdHeader);
+	int size = TCP_HEADER_LEN + sizeof(struct psdHeader);
 	unsigned int checkSum = 0;
 	int i;
 	for (i = 0; i < size; i += 2) {
@@ -501,38 +601,38 @@ int infp_try_connect(const char* src, const char* dst, unsigned short sport, uns
 		return -1;
 	}
 	const int on = 1;
-	setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on));
+	struct tcphdr tHeader;
+	struct ip iHeader;
+	struct psdHeader pHeader;
 
-	struct tcphdr* tHeader = (struct tcphdr*) malloc(sizeof(struct tcphdr));
-	memset(tHeader, 0, TCP_HEADER_LEN);
-	initTCPHeader(tHeader, sport, dport);
-	struct ip* iHeader = (struct ip*) malloc(sizeof(struct ip));
-	memset(iHeader, 0, IP_HEADER_LEN);
-	initIPHeader(iHeader, ttl, src, dst);
-	struct psdHeader* pHeader = (struct psdHeader*) malloc(sizeof(struct psdHeader));
-	initPsdHeader(pHeader, iHeader);
+	int rc = setsockopt(sock, IPPROTO_IP, IP_HDRINCL, (void*)&on, sizeof(on));
+	
+	memset(&tHeader, 0, TCP_HEADER_LEN);
+	initTCPHeader(&tHeader, sport, dport);
+	memset(&iHeader, 0, IP_HEADER_LEN);
+	initIPHeader(&iHeader, ttl, src, dst);
+	initPsdHeader(&pHeader, &iHeader);
  
 	char sumBuf[TCP_HEADER_LEN + sizeof(struct psdHeader)];
 	memset(sumBuf, 0, TCP_HEADER_LEN + sizeof(struct psdHeader));
-	memcpy(sumBuf, pHeader, sizeof(struct psdHeader));
-	memcpy(sumBuf + sizeof(struct psdHeader), tHeader, TCP_HEADER_LEN);
+	memcpy(sumBuf, &pHeader, sizeof(struct psdHeader));
+	memcpy(sumBuf + sizeof(struct psdHeader), &tHeader, TCP_HEADER_LEN);
  
-	int ni = memcmp(sumBuf, pHeader, sizeof(struct psdHeader));
+	int ni = memcmp(sumBuf, &pHeader, sizeof(struct psdHeader));
 	if (ni != 0) {
 		perror("Compare");
 	}
-	ni = memcmp(sumBuf + sizeof(struct psdHeader), tHeader, TCP_HEADER_LEN);
+	ni = memcmp(sumBuf + sizeof(struct psdHeader), &tHeader, TCP_HEADER_LEN);
 	if (ni != 0) {
 		perror("Compare 2");
 	}
  
-	tHeader->check = htons(calcTCPCheckSum(sumBuf));
+	tHeader.check = htons(calcTCPCheckSum(sumBuf));
  
-	int totalLen = IP_HEADER_LEN + TCP_HEADER_LEN;
-	char buf[totalLen];
+	char buf[IP_HEADER_LEN + TCP_HEADER_LEN];
  
-	memcpy(buf, iHeader, IP_HEADER_LEN);
-	memcpy(buf + IP_HEADER_LEN, tHeader, TCP_HEADER_LEN);
+	memcpy(buf, &iHeader, IP_HEADER_LEN);
+	memcpy(buf + IP_HEADER_LEN, &tHeader, TCP_HEADER_LEN);
  
 	struct sockaddr_in addr;
 	memset(&addr, 0, sizeof(struct sockaddr_in));
@@ -541,9 +641,9 @@ int infp_try_connect(const char* src, const char* dst, unsigned short sport, uns
 	addr.sin_port = htons(dport);
  
 	socklen_t len = sizeof(struct sockaddr_in);
-	int n = sendto(sock, buf, totalLen, 0, (struct sockaddr*)&addr, len);
+	int n = sendto(sock, buf, IP_HEADER_LEN + TCP_HEADER_LEN, 0, (struct sockaddr*)&addr, len);
 	if (n < 0) {
-		perror("Send Error");
+		perror("Sendto Error");
 	}
 
 	close(sock);
@@ -554,7 +654,7 @@ int infp_try_connect(const char* src, const char* dst, unsigned short sport, uns
 
 void close_sock(sock_t *sock)
 {
-	if (sock->fd > 0)
+	if (sock->fd != INVALID_SOCKET)
 	{
 		close(sock->fd);
 		CYM_LOG(LV_FATAL, "close fd = %d\n", sock->fd);

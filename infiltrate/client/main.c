@@ -44,6 +44,9 @@ void infp_timeout(unsigned long data)
 {
 	cli_infp_t *infp = (cli_infp_t*)data;
 
+	if (!infp->allow_p2p)
+		return;
+
 	switch(infp->state)
 	{
 	case CLI_INFP_INIT:
@@ -78,7 +81,7 @@ void infp_timeout(unsigned long data)
 	mod_timer(&gl_cli_infp.timer, jiffies + HZ);
 }
 
-int infp_init(const char *server_addr, __u8 *device_mac, __u32 tcp_ip)
+int infp_init(const char *server_addr, __u8 *device_mac, __u32 tcp_ip, __u32 allow_p2p)
 {
 	int try_times = 0;
 	int i = 0;
@@ -97,12 +100,16 @@ int infp_init(const char *server_addr, __u8 *device_mac, __u32 tcp_ip)
 	snprintf(gl_cli_infp.name, sizeof(gl_cli_infp.name), "%02X:%02X:%02X:%02X:%02X:%02X"
 		, device_mac[0], device_mac[1], device_mac[2], device_mac[3], device_mac[4], device_mac[5]);
 
-	// TODO: support dynamic domain
+	#ifndef WIN32
+	// windows自身自灭去！垃圾系统！
 	if(tcp_ip)
 	{
 		gl_cli_infp.allow_tcp = 1;
 		sprintf(gl_cli_infp.ip, "%s", IpToStr(tcp_ip));
 	}
+	#endif
+	// 可以支持，但推荐关闭
+	gl_cli_infp.allow_p2p = allow_p2p;
 	gl_cli_infp.server_ip = StrToIp(server_ipstr);
 	gl_cli_infp.svr_m_port = htons(INFP_DEFAFULT_PORT);
 	gl_cli_infp.svr_b_port = htons(INFP_DEFAFULT_PORT+1);
@@ -261,15 +268,17 @@ out:
 	return ret;
 }
 
-int infp_cli_init(const char *sn_addr, __u8 *device_mac, __u32 tcp_ip)
+int infp_cli_init(const char *sn_addr, __u8 *device_mac, __u32 tcp_ip, __u32 allow_p2p)
 {
 	int ret = -1;
 	gl_cli_infp.mode = 0;
+	#ifndef WIN32
 	signal(SIGPIPE, SIG_IGN);
+	#endif
 
 	CYM_LOG(LV_QUIET, "start\n");
 
-	if(infp_init(sn_addr, device_mac, tcp_ip))
+	if(infp_init(sn_addr, device_mac, tcp_ip, allow_p2p))
 	{
 		printf("infp_init failed\n");
 		goto FUNC_OUT;

@@ -64,7 +64,8 @@ typedef struct cli_infp_s
 	char  name[32];			// 客户端标识
 	__u8  mode;				// 客户端模式 0:host, 1:client
 	__u8  allow_tcp;		// 是否允许tcp打洞
-	__u8  pad[2];
+	__u8  allow_p2p;		// 是否允许p2p
+	__u8  pad;
 
 	__u32 state;			// @see CLI_INFP_STATE
 	__u32 next_login;		// 下次登陆

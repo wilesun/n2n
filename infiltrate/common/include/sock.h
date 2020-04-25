@@ -1,4 +1,4 @@
-/*
+﻿/*
 Copyright 2020 chseasipder
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -128,13 +128,15 @@ static inline int set_sock_nonblock(int fd)
 static inline int set_sock_timeout(int fd, int timeout)
 {
 	int ret;
+#ifdef WIN32
+	int _timeout = timeout;
+#else
 	struct timeval _timeout;
 	_timeout.tv_sec = (timeout / 1000);
 	_timeout.tv_usec = (timeout % 1000) * HZ;
-	//??????
-	ret = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&_timeout, sizeof(struct timeval));
-	//??????
-	ret = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&_timeout, sizeof(struct timeval));
+#endif
+	ret = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&_timeout, sizeof(_timeout));
+	ret = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&_timeout, sizeof(_timeout));
 
 	return ret;
 }
