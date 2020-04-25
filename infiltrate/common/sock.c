@@ -605,7 +605,7 @@ int infp_try_connect(const char* src, const char* dst, unsigned short sport, uns
 	struct ip iHeader;
 	struct psdHeader pHeader;
 
-	int rc = setsockopt(sock, IPPROTO_IP, IP_HDRINCL, (void*)&on, sizeof(on));
+	setsockopt(sock, IPPROTO_IP, IP_HDRINCL, (void*)&on, sizeof(on));
 	
 	memset(&tHeader, 0, TCP_HEADER_LEN);
 	initTCPHeader(&tHeader, sport, dport);
