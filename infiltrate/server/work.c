@@ -32,12 +32,14 @@ void memxor(unsigned char* data, int len)
 
 void inf_get_fds(int* fds, int* fd_num)
 {
-	int fd_nums = 0;
+	int fd_nums = 0, i;
 	*fd_num = 0;
 
-	fds[fd_nums++] = gl_infp.main_sock.fd;
-	fds[fd_nums++] = gl_infp.back_sock.fd;
-	fds[fd_nums++] = gl_infp.tcp_sock.fd;
+	for(i = 0; i < INFP_POLL_MAX; i++)
+	{
+		if(poll_arr[i].fd > 0)
+			fds[fd_nums++] = poll_arr[i].fd;
+	}
 
 	*fd_num = fd_nums;
 }
@@ -367,10 +369,13 @@ int infp_do_login(cJSON* root, struct sockaddr_in *addr, sock_t *sock)
 	j_value = cJSON_GetObjectItem(root, "allow_tcp");
 	if(!j_value || !j_value->valuestring)
 	{
-		CYM_LOG(LV_ERROR, "parse port failed\n");
-		goto out;
+		CYM_LOG(LV_ERROR, "parse allow_tcp failed\n");
+		allow_tcp = 0;
 	}
-	allow_tcp = atoi(j_value->valuestring);
+	else
+	{
+		allow_tcp = atoi(j_value->valuestring);
+	}
 
 	j_value = cJSON_GetObjectItem(root, "mode");
 	if(!j_value || !j_value->valuestring)

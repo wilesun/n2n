@@ -32,7 +32,7 @@ limitations under the License.
 int debug_level = 10;
 
 #define INFP_DEFAFULT_PORT 45124 // TODO: 配置文件获取
-#define INFP_POLL_MAX 20		// 随手写的, 目前只监听12个端口
+#define INFP_POLL_MAX 32		// 随手写的, 目前只监听32个
 
 infp_t gl_infp = {};
 struct pollfd poll_arr[INFP_POLL_MAX];
