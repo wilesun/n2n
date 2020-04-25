@@ -613,6 +613,9 @@ int is_empty_ip_address(const n2n_sock_t * sock) {
   size_t len=0;
   size_t i;
 
+  if(sock->port == 0)
+    return 0;
+
   if(AF_INET6 == sock->family)
     {
       ptr = sock->addr.v6;
@@ -1575,6 +1578,12 @@ static void readFromIPSocket(n2n_edge_t * eee, int in_sock) {
     }
 
     return; /* failed to receive data from UDP */
+  }
+
+  if(recvlen == 0)
+  {
+    inf_proxy_del_cli_by_fd(in_sock);
+    return;
   }
 
   /* REVISIT: when UDP/IPv6 is supported we will need a flag to indicate which

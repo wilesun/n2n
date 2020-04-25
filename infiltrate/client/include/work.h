@@ -13,6 +13,7 @@ int cli_infp_send_stun_hello(sock_t* sock, cli_infp_t* infp, __u32 ip, __u16 por
 int infp_cli_init(const char *sn_addr, __u8 *device_mac, __u32 tcp_ip);
 int cli_infp_check_ping(__u8 *buf, __u32 recv_len, struct sockaddr_in *addr);
 int inf_proxy_check_exist(void* p_mac, void* p_addr, int* fd, void* real_addr);
+void inf_proxy_del_cli_by_fd(int fd);
 int inf_proxy_check_send(void* p_mac, void* p_addr, int* fd);
 void inf_proxy_get_fds(int* fds, int* fd_num);
 void inf_get_fds(int* fds, int* fd_num);

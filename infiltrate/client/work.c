@@ -58,6 +58,24 @@ void inf_proxy_del_cli(inf_proxy_t* del)
 	}
 }
 
+void inf_proxy_del_cli_by_fd(int fd)
+{
+	struct list_head *pos, *n;
+	int found = 0;
+	list_for_each_safe(pos, n, &gl_cli_infp.proxy_list)
+	{
+		inf_proxy_t *temp = list_entry(pos, inf_proxy_t, list_to);
+		if(temp->fd == fd)
+		{
+			inf_proxy_del_cli(temp);
+			found = 1;
+		}
+	}
+
+	if(!found)
+		close(fd);
+}
+
 inf_proxy_t *inf_proxy_create_cli(char *str)
 {
 	inf_proxy_t *temp = mem_malloc(sizeof(inf_proxy_t));
