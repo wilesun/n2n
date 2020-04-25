@@ -684,11 +684,14 @@ int cli_infp_do_tcp_stun_hello(cli_infp_t* infp, int offset, int mode, __u32 ip,
 			{
 				if(!tcp_just_connect(infp->proxy_sock[1].fd, ip, htons(port+i), 0))
 				{
+					printf("sendto %s:%d\n", IpToStr(ip), port+i);
+					cli_infp_send_stun_hello(&infp->proxy_sock[1], infp, ip, htons(port));
 					curfds = sock_add_poll(poll_arr, INFP_POLL_MAX, &infp->proxy_sock[1]);
 					if(curfds < 0)
 					{
 						return -1;
 					}
+					break;
 				}
 			}
 		}
@@ -698,11 +701,14 @@ int cli_infp_do_tcp_stun_hello(cli_infp_t* infp, int offset, int mode, __u32 ip,
 			{
 				if(!tcp_just_connect(infp->proxy_sock[i+1].fd, ip, htons(port), 0))
 				{
+					printf("sendto %s:%d\n", IpToStr(ip), port+1);
+					cli_infp_send_stun_hello(&infp->proxy_sock[i+1], infp, ip, htons(port));
 					curfds = sock_add_poll(poll_arr, INFP_POLL_MAX, &infp->proxy_sock[i+1]);
 					if(curfds < 0)
 					{
 						return -1;
 					}
+					break;
 				}
 			}
 		}

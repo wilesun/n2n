@@ -225,6 +225,7 @@ int infp_poll_run(int timeout)
 					sock_t * new_sock = tcp_accept(sock);
 					if(new_sock)
 					{
+						CYM_LOG(LV_INFO, "accept fd [%d] ok\n", new_sock->fd);
 						sock_del_poll(poll_arr, INFP_POLL_MAX, sock);
 						close_sock(sock);
 
